@@ -51,13 +51,11 @@
     const TM_MODEL_URL = "https://teachablemachine.withgoogle.com/models/hgp4ntk2z/";
     
     // API KEY (Gesplitst tegen GitHub blokkades)
-    // Vul hier jouw NIEUWE key in
     const DEEL_1 = "AIzaSyALqJ7iSB7Ifhy"; 
     const DEEL_2 = "_Ym-b7Hkks5dpMava18I";
     const API_KEY = DEEL_1 + DEEL_2;
 
     // --- 2. DE SLIMME TIPS LIJST ---
-    // Pas dit aan op basis van jouw Teachable Machine klassen!
     const TIPS_LIJST = {
         "Butter": "This is butter. Check the top of the lid.",
         "Soda can": "This is a soda can. The date is usually on the bottom.",
@@ -67,8 +65,9 @@
         "Background": "I don't see a product, please hold it closer to the camera."
     };
 
-    // --- 3. SYSTEEM VARIABELEN ---
-    const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`;
+    // --- 3. SYSTEEM VARIABELEN (HIER ZIT DE FIX) ---
+    // We hebben '-latest' toegevoegd aan de modelnaam om de 404 op te lossen.
+    const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${API_KEY}`;
     
     let tmModel, videoEl = document.getElementById('video');
     let statusEl = document.getElementById('status');
@@ -83,7 +82,7 @@
     function speak(text) {
         window.speechSynthesis.cancel();
         const u = new SpeechSynthesisUtterance(text);
-        u.lang = 'en-US'; // Of 'nl-NL' als je Nederlandse datums wilt
+        u.lang = 'en-US'; 
         window.speechSynthesis.speak(u);
     }
 
@@ -113,7 +112,7 @@
         document.getElementById('resTip').style.display = 'none';
 
         try {
-            // STAP 1: Teachable Machine (Wat is het?)
+            // STAP 1: Teachable Machine
             const canvas = document.createElement("canvas");
             canvas.width = videoEl.videoWidth; canvas.height = videoEl.videoHeight;
             const ctx = canvas.getContext("2d");
@@ -121,11 +120,11 @@
             
             const prediction = await tmModel.predict(canvas);
             const bestPred = prediction.reduce((p, c) => p.probability > c.probability ? p : c);
-            const productNaam = bestPred.className; // Bijv: "Melk"
+            const productNaam = bestPred.className;
 
             setStatus(`${productNaam} herkend. Datum zoeken...`, "loading");
 
-            // STAP 2: Gemini (Waar is de datum?)
+            // STAP 2: Gemini
             const base64 = canvas.toDataURL("image/jpeg").split(",")[1];
             const payload = {
                 contents: [{
@@ -144,7 +143,7 @@
                 body: JSON.stringify(payload)
             });
 
-            if (!response.ok) throw new Error(`API Fout: ${response.status}`);
+            if (!response.ok) throw new Error(`API Fout: ${response.status} (Model niet gevonden)`);
 
             const data = await response.json();
             const text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "NULL";
@@ -157,15 +156,11 @@
             resultArea.style.display = 'block';
 
             if (datumGevonden) {
-                // Scenario A: Datum gevonden
                 setStatus("Succes!", "success");
                 speak(`Product is ${productNaam}. The date is ${text}`);
             } else {
-                // Scenario B: Geen datum -> Geef TIP op basis van TM
                 setStatus("Geen datum gevonden", "error");
-                
-                // Zoek de tip in onze lijst. Geen tip? Pak de default.
-                const tip = TIPS_LIJST[productNaam] || TIPS_LIJST["default"];
+                const tip = TIPS_LIJST[productNaam] || TIPS_LIJST["Background"]; // Default naar 'Background' als niets gevonden
                 
                 const tipEl = document.getElementById('resTip');
                 tipEl.textContent = "💡 TIP: " + tip;
