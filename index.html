@@ -3,40 +3,62 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Date Scanner RAW</title>
+    <title>Date Scanner GitHub</title>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.3.1/dist/tf.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8/dist/teachablemachine-image.min.js"></script>
     
     <style>
-        body { font-family: -apple-system, sans-serif; background: #222; display: flex; flex-direction: column; align-items: center; padding: 20px; color: white; }
-        .container { background: #333; padding: 20px; border-radius: 12px; width: 100%; max-width: 500px; text-align: center; }
-        h1 { margin-bottom: 10px; color: #fff; }
-        video { width: 100%; border-radius: 8px; background: black; margin-bottom: 15px; transform: scaleX(-1); border: 2px solid #555; }
-        button { background: #007bff; color: white; border: none; padding: 18px 30px; border-radius: 12px; font-size: 18px; font-weight: bold; cursor: pointer; width: 100%; margin-top: 10px; }
-        button:disabled { background: #555; cursor: not-allowed; }
-        .status { margin: 15px 0; padding: 12px; border-radius: 8px; font-weight: 500; font-family: monospace; }
-        .status.loading { background: #444; color: #ccc; }
+        body { font-family: 'Segoe UI', sans-serif; background: #121212; color: white; display: flex; flex-direction: column; align-items: center; padding: 20px; min-height: 100vh; }
+        .container { background: #1e1e1e; padding: 20px; border-radius: 16px; width: 100%; max-width: 500px; text-align: center; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
+        h1 { margin: 0 0 20px 0; font-size: 1.8em; color: #fff; }
+        
+        /* Camera Frame */
+        .video-wrapper { position: relative; width: 100%; border-radius: 12px; overflow: hidden; border: 2px solid #333; background: black; }
+        video { width: 100%; display: block; transform: scaleX(-1); } /* Spiegelen */
+        
+        /* Knoppen & Status */
+        .status { margin: 15px 0; padding: 12px; border-radius: 8px; font-weight: bold; background: #333; color: #aaa; min-height: 20px; }
         .status.success { background: #1b5e20; color: #fff; }
         .status.error { background: #b71c1c; color: #fff; }
-        #result { margin-top: 20px; text-align: left; display: none; background: #444; padding: 15px; border-radius: 8px; }
+        .status.loading { background: #0d47a1; color: #fff; }
+
+        button { background: #2196F3; color: white; border: none; padding: 18px 30px; border-radius: 12px; font-size: 18px; font-weight: bold; cursor: pointer; width: 100%; margin-top: 10px; transition: 0.2s; }
+        button:disabled { background: #555; cursor: not-allowed; opacity: 0.7; }
+        button:active { transform: scale(0.98); }
+
+        /* Resultaat */
+        #result { margin-top: 20px; text-align: left; display: none; background: #2a2a2a; padding: 15px; border-radius: 8px; border-left: 5px solid #2196F3; }
+        .label { color: #888; font-size: 0.9em; text-transform: uppercase; letter-spacing: 1px; }
+        .value { font-size: 1.2em; margin-bottom: 10px; display: block; font-weight: 500; }
+        .advice { font-style: italic; color: #aaa; font-size: 0.9em; margin-top: 10px; border-top: 1px solid #444; padding-top: 10px; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h1>Date Scanner RAW</h1>
-    <div id="status" class="status loading">Initializing...</div>
-    <div style="position: relative;"><video id="video" autoplay playsinline muted></video></div>
-    <button id="scanBtn" disabled>Loading Models...</button>
-    <div id="result"></div>
+    <h1>Datum Scanner</h1>
+    <div id="status" class="status">Systeem laden...</div>
+    
+    <div class="video-wrapper">
+        <video id="video" autoplay playsinline muted></video>
+    </div>
+
+    <button id="scanBtn" disabled>Even geduld...</button>
+    
+    <div id="result">
+        <span class="label">Product</span>
+        <span class="value" id="resProduct">-</span>
+        <span class="label">Datum</span>
+        <span class="value" id="resDate">-</span>
+        <div class="advice" id="resAdvice"></div>
+    </div>
 </div>
 
 <script>
-    // CONFIGURATIE
+    // --- CONFIGURATIE ---
     const TM_MODEL_URL = "https://teachablemachine.withgoogle.com/models/hgp4ntk2z/";
     const API_KEY = "AIzaSyCO2VXgEzZyE7ox-eXeTwP5VIb79w3eKp8"; 
-    
-    // We gebruiken GEEN bibliotheek meer, maar de directe link.
+    // We gebruiken de directe RAW REST API endpoint
     const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`;
 
     let tmModel, videoEl = document.getElementById('video');
@@ -44,7 +66,8 @@
     let scanBtn = document.getElementById('scanBtn');
     let resultDiv = document.getElementById('result');
 
-    function setStatus(msg, type='loading') {
+    // -- HULPFUNCTIES --
+    function setStatus(msg, type='') {
         statusEl.textContent = msg;
         statusEl.className = `status ${type}`;
     }
@@ -52,49 +75,62 @@
     function speak(text) {
         window.speechSynthesis.cancel();
         const u = new SpeechSynthesisUtterance(text);
-        u.lang = 'en-US';
+        u.lang = 'en-US'; // Zet op Engels voor betere uitspraak van Engelse datums
         window.speechSynthesis.speak(u);
     }
 
+    // -- INIT: START ALLES OP --
     async function init() {
         try {
+            setStatus("Modellen laden...", "loading");
+            // 1. Laad Teachable Machine
             tmModel = await tmImage.load(TM_MODEL_URL + 'model.json', TM_MODEL_URL + 'metadata.json');
+            
+            // 2. Start Camera
             const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
             videoEl.srcObject = stream;
             
+            // 3. Klaar!
             scanBtn.disabled = false;
             scanBtn.textContent = "SCAN PRODUCT";
-            setStatus("System Ready. Mode: RAW API", "success");
+            setStatus("Klaar voor gebruik", "success");
             scanBtn.onclick = doScan;
+
         } catch (e) {
-            setStatus("Init Error: " + e.message, "error");
+            setStatus("Fout bij starten: " + e.message, "error");
         }
     }
 
+    // -- SCAN: DE HOOFDFUNCTIE --
     async function doScan() {
-        scanBtn.disabled = true; scanBtn.textContent = "Scanning...";
-        setStatus("Identifying product...", "loading");
+        scanBtn.disabled = true; scanBtn.textContent = "Analyseren...";
+        setStatus("Product herkennen...", "loading");
         resultDiv.style.display = "none";
 
         try {
-            // 1. Teachable Machine
+            // STAP 1: Foto maken van video
             const canvas = document.createElement("canvas");
             canvas.width = videoEl.videoWidth; canvas.height = videoEl.videoHeight;
             const ctx = canvas.getContext("2d");
             ctx.drawImage(videoEl, 0, 0);
 
+            // STAP 2: Product Herkennen (Lokaal)
             const prediction = await tmModel.predict(canvas);
-            const product = prediction.reduce((p, c) => p.probability > c.probability ? p : c).className;
+            const bestPred = prediction.reduce((p, c) => p.probability > c.probability ? p : c);
+            const product = bestPred.className;
 
-            setStatus(`Product: ${product}. Sending to Google...`, "loading");
+            setStatus(`Gevonden: ${product}. Datum zoeken...`, "loading");
 
-            // 2. Gemini via RAW FETCH (Geen libraries!)
-            const base64Image = canvas.toDataURL("image/jpeg").split(",")[1];
-            
+            // STAP 3: Datum Zoeken (Via Gemini API Fetch)
+            const base64Image = canvas.toDataURL("image/jpeg").split(",")[1]; // Header verwijderen
+
             const payload = {
                 contents: [{
                     parts: [
-                        { text: `You are an assistant for the blind. This is a ${product}. Find the EXPIRATION DATE (EXP/BB/THT). Reply ONLY with the date (e.g. "12 Oct 2025"). If NO date found, reply "NULL".` },
+                        { text: `You are an assistant for the blind. I am holding a ${product}. Find the EXPIRATION DATE (EXP/BB/THT). 
+                        - Look aggressively for dates like dd-mm-yy, mm/yyyy, or printed codes.
+                        - Reply ONLY with the date in English (e.g. "12 Oct 2025"). 
+                        - If absolutely NO date is found, reply exactly "NULL".` },
                         { inline_data: { mime_type: "image/jpeg", data: base64Image } }
                     ]
                 }]
@@ -106,29 +142,13 @@
                 body: JSON.stringify(payload)
             });
 
-            if (!response.ok) {
-                const errData = await response.json();
-                throw new Error(errData.error?.message || "Google API Error");
-            }
+            if (!response.ok) throw new Error("Google API Error: " + response.status);
 
             const data = await response.json();
+            // Veiligheidscheck voor het antwoord
             const text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "NULL";
             const found = !text.includes("NULL");
 
-            resultDiv.innerHTML = `<strong>Product:</strong> ${product}<br><strong>Date:</strong> ${found ? text : "Not found"}`;
-            resultDiv.style.display = "block";
-            
-            setStatus(found ? "Success!" : "No date found", found ? "success" : "error");
-            speak(found ? `Product is ${product}. Date is ${text}` : `Product is ${product}. No date found.`);
-
-        } catch (e) {
-            setStatus("Scan Error: " + e.message, "error");
-            console.error(e);
-        }
-        scanBtn.disabled = false; scanBtn.textContent = "SCAN AGAIN";
-    }
-
-    init();
-</script>
-</body>
-</html>
+            // STAP 4: Resultaat Tonen
+            document.getElementById('resProduct').textContent = product;
+            document.getElementById
