@@ -3,39 +3,45 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Scanner Final SDK</title>
+    <title>Scanner Ultimate (Multi-Model)</title>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.3.1/dist/tf.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8/dist/teachablemachine-image.min.js"></script>
     
     <style>
-        body { font-family: 'Segoe UI', sans-serif; background: #121212; color: white; text-align: center; padding: 20px; }
-        .container { max-width: 500px; margin: 0 auto; background: #1e1e1e; padding: 20px; border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
+        body { font-family: 'Segoe UI', sans-serif; background: #000; color: white; text-align: center; padding: 20px; }
+        .container { max-width: 500px; margin: 0 auto; background: #1a1a1a; padding: 20px; border-radius: 15px; border: 1px solid #333; }
         video { width: 100%; border-radius: 10px; transform: scaleX(-1); border: 2px solid #333; }
-        button { background: #FFC107; color: black; border: none; padding: 15px 30px; border-radius: 10px; font-size: 18px; font-weight: bold; width: 100%; margin-top: 15px; cursor: pointer; border: 2px solid #000; }
-        button:disabled { background: #555; color: #888; border-color: #555; }
         
-        .status { margin: 10px 0; padding: 10px; border-radius: 5px; font-size: 0.9em; font-weight: bold; }
-        .status.loading { background: #1565c0; color: white; }
-        .status.error { background: #c62828; color: white; }
-        .status.success { background: #2e7d32; color: white; }
+        button { background: #00C853; color: white; border: none; padding: 18px 30px; border-radius: 10px; font-size: 20px; font-weight: bold; width: 100%; margin-top: 15px; cursor: pointer; text-transform: uppercase; letter-spacing: 1px; }
+        button:disabled { background: #555; color: #888; }
+        
+        .status { margin: 15px 0; padding: 12px; border-radius: 8px; font-size: 14px; font-family: monospace; }
+        .status.loading { background: #2196F3; color: white; }
+        .status.error { background: #D32F2F; color: white; }
+        .status.success { background: #388E3C; color: white; }
+        
+        /* Logboekje voor de pogingen */
+        .log-console { font-size: 11px; color: #666; margin-top: 5px; min-height: 20px; }
 
-        #resultArea { display: none; margin-top: 20px; text-align: left; background: #252525; padding: 15px; border-radius: 10px; border-left: 5px solid #FFC107; }
-        .label { color: #aaa; font-size: 0.8em; text-transform: uppercase; }
-        .data { font-size: 1.2em; display: block; margin-bottom: 10px; font-weight: bold; color: #fff; }
-        .tip-box { background: #333; padding: 10px; border-radius: 5px; margin-top: 10px; font-style: italic; color: #FFC107; display: none; border: 1px solid #FFC107; }
+        #resultArea { display: none; margin-top: 20px; text-align: left; background: #252525; padding: 15px; border-radius: 10px; border-left: 5px solid #00C853; }
+        .label { color: #888; font-size: 0.8em; text-transform: uppercase; }
+        .data { font-size: 1.3em; display: block; margin-bottom: 10px; font-weight: bold; color: #fff; }
+        .tip-box { background: #333; padding: 10px; border-radius: 5px; margin-top: 10px; font-style: italic; color: #FFD600; display: none; border: 1px solid #FFD600; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h2>Date Scanner</h2>
+    <h2>Date Scanner EU</h2>
+    
     <div id="status" class="status">System loading...</div>
+    <div id="log" class="log-console"></div>
     
     <video id="video" autoplay playsinline muted></video>
-    <button id="scanBtn" disabled>Please wait...</button>
+    <button id="scanBtn" disabled>WAIT...</button>
     
     <div id="resultArea">
-        <span class="label">Product:</span>
+        <span class="label">Product Identified:</span>
         <span class="data" id="resProduct">-</span>
         
         <span class="label">Expiration Date:</span>
@@ -45,12 +51,9 @@
     </div>
 </div>
 
-<script type="module">
-    // We importeren de officiële Google SDK direct van het internet
-    import { GoogleGenerativeAI } from "https://esm.run/@google/generative-ai";
-
+<script>
     // ==========================================
-    // 1. CONFIGURATION
+    // 1. CONFIGURATIE 
     // ==========================================
     
     const TM_MODEL_URL = "https://teachablemachine.withgoogle.com/models/hgp4ntk2z/";
@@ -59,6 +62,15 @@
     const DEEL_1 = "AIzaSyALqJ7iSB7Ifhy"; 
     const DEEL_2 = "_Ym-b7Hkks5dpMava18I";
     const API_KEY = DEEL_1 + DEEL_2;
+
+    // DE LIJST MET MODELLEN (We proberen ze allemaal!)
+    const MODEL_PRIORITY = [
+        "gemini-1.5-flash",
+        "gemini-1.5-flash-001",
+        "gemini-1.5-flash-002",
+        "gemini-1.5-flash-8b",
+        "gemini-1.5-pro"
+    ];
 
     const TIPS_LIST = {
         "Butter": "This is butter. Check the top of the lid.",
@@ -69,11 +81,13 @@
         "Background": "I don't see a product, please hold it closer to the camera."
     };
 
-    // MODELS OM TE TESTEN (Volgorde van prioriteit)
-    const MODELS_TO_TRY = ["gemini-1.5-flash", "gemini-1.5-flash-latest", "gemini-1.5-pro"];
+    // ==========================================
+    // 2. LOGICA
+    // ==========================================
 
     let tmModel, videoEl = document.getElementById('video');
     let statusEl = document.getElementById('status');
+    let logEl = document.getElementById('log');
     let scanBtn = document.getElementById('scanBtn');
     let resultArea = document.getElementById('resultArea');
 
@@ -82,19 +96,21 @@
         statusEl.className = `status ${type}`;
     }
 
+    function log(msg) {
+        logEl.textContent = msg;
+        console.log(msg);
+    }
+
     function speak(text) {
         window.speechSynthesis.cancel();
         const u = new SpeechSynthesisUtterance(text);
         u.lang = 'en-US'; 
-        u.rate = 0.9; 
         window.speechSynthesis.speak(u);
     }
 
-    // Initialize Teachable Machine & Camera
     async function init() {
         try {
-            setStatus("Loading models...");
-            // Teachable Machine laden (Dit staat los van de module import)
+            setStatus("Loading Teachable Machine...");
             tmModel = await tmImage.load(TM_MODEL_URL + 'model.json', TM_MODEL_URL + 'metadata.json');
             
             const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
@@ -102,25 +118,72 @@
             
             scanBtn.disabled = false;
             scanBtn.textContent = "📸 SCAN NOW";
-            setStatus("Ready. Point at product.", "success");
-            
-            // Koppel de klik functie (moet binnen module scope)
+            setStatus("Ready. Press Scan.", "success");
             scanBtn.onclick = doScan;
-            
         } catch (e) {
             setStatus("Camera Error: " + e.message, "error");
         }
     }
 
-    // --- DE INTELLIGENTE SCAN FUNCTIE ---
+    // SLIMME FUNCTIE: PROBEERT ALLE MODELLEN TOT ER EEN WERKT
+    async function findDateWithAnyModel(productName, base64Image) {
+        let lastError = "";
+
+        const prompt = `This is a: ${productName}. Find the EXPIRATION DATE. 
+        - If found: Write ONLY the date in English (e.g. 12 Oct 2025). 
+        - If NOT found: Write exactly "No date found".`;
+
+        // Loop door de lijst met modellen
+        for (const modelName of MODEL_PRIORITY) {
+            log(`Trying model: ${modelName}...`);
+            
+            try {
+                const URL = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${API_KEY}`;
+                
+                const payload = {
+                    contents: [{
+                        parts: [
+                            { text: prompt },
+                            { inline_data: { mime_type: "image/jpeg", data: base64Image } }
+                        ]
+                    }]
+                };
+
+                const response = await fetch(URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    const text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+                    log(`✅ Works! Used: ${modelName}`);
+                    return text || "No date found";
+                } else {
+                    // Als 404 of 400, ga door naar de volgende
+                    log(`❌ ${modelName} failed (${response.status}). Next...`);
+                    lastError = response.status;
+                }
+
+            } catch (err) {
+                log(`❌ Error: ${err.message}`);
+            }
+        }
+
+        // Als we hier komen, zijn ze ALLEMAAL mislukt
+        throw new Error(`All models failed (EU Lock?). Last code: ${lastError}`);
+    }
+
     async function doScan() {
         scanBtn.disabled = true; scanBtn.textContent = "Analyzing...";
         setStatus("Identifying product...", "loading");
         resultArea.style.display = 'none';
         document.getElementById('resTip').style.display = 'none';
+        log(""); // Clear log
 
         try {
-            // STAP 1: Teachable Machine
+            // 1. Teachable Machine
             const canvas = document.createElement("canvas");
             canvas.width = videoEl.videoWidth; canvas.height = videoEl.videoHeight;
             const ctx = canvas.getContext("2d");
@@ -130,54 +193,16 @@
             const bestPred = prediction.reduce((p, c) => p.probability > c.probability ? p : c);
             const productName = bestPred.className;
 
-            setStatus(`${productName} detected. Finding date...`, "loading");
+            setStatus(`Found: ${productName}. Reading date...`, "loading");
 
-            // STAP 2: Gemini via SDK (Met Auto-Retry)
-            const genAI = new GoogleGenerativeAI(API_KEY);
-            const base64Image = canvas.toDataURL("image/jpeg").split(",")[1];
+            // 2. Gemini (De Loop)
+            const base64 = canvas.toDataURL("image/jpeg").split(",")[1];
             
-            let text = "";
-            let success = false;
-            let lastError = "";
-
-            // Loop door de modellen heen tot er eentje werkt
-            for (const modelName of MODELS_TO_TRY) {
-                try {
-                    console.log(`Trying model: ${modelName}`);
-                    const model = genAI.getGenerativeModel({ model: modelName });
-                    
-                    const prompt = `This is a: ${productName}. Find the EXPIRATION DATE. 
-                    - Date found? Write ONLY the date in English (e.g. 12 Oct 2025). 
-                    - No date? Write exactly: "No date found".`;
-
-                    const imagePart = {
-                        inlineData: {
-                            data: base64Image,
-                            mimeType: "image/jpeg"
-                        }
-                    };
-
-                    const result = await model.generateContent([prompt, imagePart]);
-                    const response = await result.response;
-                    text = response.text().trim();
-                    
-                    success = true; // Het is gelukt!
-                    break;          // Stop de loop
-                } catch (err) {
-                    console.warn(`Model ${modelName} failed:`, err);
-                    lastError = err.message || err.toString();
-                    // Ga door naar het volgende model in de lijst...
-                }
-            }
-
-            if (!success) {
-                // Als ze allemaal falen, gooi de laatste error
-                throw new Error(`All models failed. Last error: ${lastError}`);
-            }
-
-            // STAP 3: Resultaat verwerken
+            // Hier roepen we de functie aan die ze allemaal probeert
+            const text = await findDateWithAnyModel(productName, base64);
             const dateFound = !text.toLowerCase().includes("no date found");
 
+            // 3. Resultaat
             document.getElementById('resProduct').textContent = productName;
             document.getElementById('resDate').textContent = dateFound ? text : "Not found";
             resultArea.style.display = 'block';
@@ -190,20 +215,18 @@
                 const advice = TIPS_LIST[productName] || `I recognize ${productName}, but see no date. Turn the product around.`;
                 
                 const tipEl = document.getElementById('resTip');
-                tipEl.textContent = "💡 ADVICE: " + advice;
+                tipEl.textContent = "💡 " + advice;
                 tipEl.style.display = 'block';
                 
                 speak(`No date found. ${advice}`);
             }
 
         } catch (e) {
-            setStatus("Error: " + e.message, "error");
-            console.error(e);
+            setStatus("System Error: " + e.message, "error");
         }
         scanBtn.disabled = false; scanBtn.textContent = "📸 SCAN AGAIN";
     }
 
-    // Start
     init();
 </script>
 
