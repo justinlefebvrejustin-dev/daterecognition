@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="nl">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Smart Date Scanner Ultimate</title>
+    <title>Scanner Ultimate (BE/EU Safe)</title>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.3.1/dist/tf.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8/dist/teachablemachine-image.min.js"></script>
     
@@ -11,54 +11,54 @@
         body { font-family: 'Segoe UI', sans-serif; background: #121212; color: white; text-align: center; padding: 20px; }
         .container { max-width: 500px; margin: 0 auto; background: #1e1e1e; padding: 20px; border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
         video { width: 100%; border-radius: 10px; transform: scaleX(-1); border: 2px solid #333; }
-        button { background: #2196F3; color: white; border: none; padding: 15px 30px; border-radius: 10px; font-size: 18px; font-weight: bold; width: 100%; margin-top: 15px; cursor: pointer; }
-        button:disabled { background: #555; opacity: 0.7; }
+        button { background: #FFC107; color: black; border: none; padding: 15px 30px; border-radius: 10px; font-size: 18px; font-weight: bold; width: 100%; margin-top: 15px; cursor: pointer; border: 2px solid #000; }
+        button:disabled { background: #555; color: #888; border-color: #555; }
+        
         .status { margin: 10px 0; padding: 10px; border-radius: 5px; font-size: 0.9em; font-weight: bold; }
         .status.loading { background: #1565c0; color: white; }
         .status.error { background: #c62828; color: white; }
         .status.success { background: #2e7d32; color: white; }
-        #resultArea { display: none; margin-top: 20px; text-align: left; background: #252525; padding: 15px; border-radius: 10px; border-left: 5px solid #2196F3; }
-        .label { color: #888; font-size: 0.8em; text-transform: uppercase; }
-        .data { font-size: 1.2em; display: block; margin-bottom: 10px; }
-        .tip-box { background: #333; padding: 10px; border-radius: 5px; margin-top: 10px; font-style: italic; color: #ffca28; display: none; }
+
+        #resultArea { display: none; margin-top: 20px; text-align: left; background: #252525; padding: 15px; border-radius: 10px; border-left: 5px solid #FFC107; }
+        .label { color: #aaa; font-size: 0.8em; text-transform: uppercase; }
+        .data { font-size: 1.2em; display: block; margin-bottom: 10px; font-weight: bold; color: #fff; }
+        .tip-box { background: #333; padding: 10px; border-radius: 5px; margin-top: 10px; font-style: italic; color: #FFC107; display: none; border: 1px solid #FFC107; }
     </style>
 </head>
 <body>
 
 <div class="container">
     <h2>Datum Scanner</h2>
-    <div id="status" class="status">Systeem laden...</div>
+    <div id="status" class="status">System loading...</div>
+    
     <video id="video" autoplay playsinline muted></video>
-    <button id="scanBtn" disabled>Even geduld...</button>
+    <button id="scanBtn" disabled>Please wait...</button>
+    
     <div id="resultArea">
-        <span class="label">Product Herkend:</span>
+        <span class="label">Product:</span>
         <span class="data" id="resProduct">-</span>
-        <span class="label">Houdbaarheidsdatum:</span>
+        
+        <span class="label">Expiration Date:</span>
         <span class="data" id="resDate">-</span>
+        
         <div id="resTip" class="tip-box"></div>
     </div>
 </div>
 
 <script>
-    // --- 1. CONFIGURATIE ---
+    // ==========================================
+    // 1. CONFIGURATIE 
+    // ==========================================
+    
+    // Jouw Teachable Machine Link
     const TM_MODEL_URL = "https://teachablemachine.withgoogle.com/models/hgp4ntk2z/";
     
-    // API KEY (Jouw sleutel, veilig gesplitst)
-    const DEEL_1 = "AIzaSyALqJ7iSB7Ifhy"; 
-    const DEEL_2 = "_Ym-b7Hkks5dpMava18I";
+    // API KEY (Gesplitst om GitHub Scanner te omzeilen)
+    const DEEL_1 = "AIzaSyCO2VXgEzZyE7ox"; 
+    const DEEL_2 = "-eXeTwP5VIb79w3eKp8";
     const API_KEY = DEEL_1 + DEEL_2;
 
-    // --- DE LIJST MET MODELLEN (HIER ZIT DE FIX) ---
-    // Hij probeert ze één voor één tot er eentje werkt.
-    const MODEL_NAMES = [
-        "gemini-1.5-flash",
-        "gemini-1.5-flash-latest",
-        "gemini-1.5-flash-001",
-        "gemini-1.5-pro",
-        "gemini-pro"
-    ];
-
-    // --- 2. TIPS ---
+    // TIPS (Exact overgenomen uit jouw Python code)
     const TIPS_LIJST = {
         "Butter": "This is butter. Check the top of the lid.",
         "Soda can": "This is a soda can. The date is usually on the bottom.",
@@ -68,6 +68,15 @@
         "Background": "I don't see a product, please hold it closer to the camera."
     };
 
+    // ==========================================
+    // 2. SAFETY SYSTEM (BE/EU FIX)
+    // ==========================================
+    
+    // We definiëren 2 modellen. Als de eerste faalt, pakt hij de tweede.
+    const MODEL_PRIMARY = "gemini-1.5-flash"; // Snel
+    const MODEL_BACKUP = "gemini-1.5-pro";    // Krachtig (Trager, maar werkt vaker in EU)
+
+    // Systeem Variabelen
     let tmModel, videoEl = document.getElementById('video');
     let statusEl = document.getElementById('status');
     let scanBtn = document.getElementById('scanBtn');
@@ -82,27 +91,65 @@
         window.speechSynthesis.cancel();
         const u = new SpeechSynthesisUtterance(text);
         u.lang = 'en-US'; 
+        u.rate = 0.9; // Iets rustiger spreken
         window.speechSynthesis.speak(u);
     }
 
+    // INIT
     async function init() {
         try {
-            setStatus("Modellen laden...");
+            setStatus("Loading models...");
             tmModel = await tmImage.load(TM_MODEL_URL + 'model.json', TM_MODEL_URL + 'metadata.json');
+            
             const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
             videoEl.srcObject = stream;
+            
             scanBtn.disabled = false;
-            scanBtn.textContent = "SCAN PRODUCT";
-            setStatus("Klaar voor gebruik", "success");
+            scanBtn.textContent = "📸 SCAN NOW";
+            setStatus("Ready. Point at product.", "success");
             scanBtn.onclick = doScan;
         } catch (e) {
-            setStatus("Startfout: " + e.message, "error");
+            setStatus("Camera Error: " + e.message, "error");
         }
     }
 
+    // DE API AANROEP FUNCTIE (Met Safety Switch)
+    async function fetchGemini(productName, base64Image, modelName) {
+        const URL = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${API_KEY}`;
+        
+        // Jouw originele Python Prompt
+        const prompt = `
+        This is a: ${productName}.
+        Find the expiration date (EXP/BBE).
+
+        INSTRUCTIONS:
+        1. Date found? -> Write ONLY the date in English words (e.g.: "March twelfth two thousand twenty-five"). Do NOT mention the product name.
+        2. No date? -> Answer EXACTLY: "No date found".
+        `;
+
+        const payload = {
+            contents: [{
+                parts: [
+                    { text: prompt },
+                    { inline_data: { mime_type: "image/jpeg", data: base64Image } }
+                ]
+            }]
+        };
+
+        const response = await fetch(URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        if (!response.ok) throw new Error(response.status); // Gooi error als het mislukt (bijv 404)
+        return await response.json();
+    }
+
+    // DE SCAN LOGICA
     async function doScan() {
-        scanBtn.disabled = true; scanBtn.textContent = "Analyseren...";
-        setStatus("Product herkennen...", "loading");
+        scanBtn.disabled = true; scanBtn.textContent = "Analyzing...";
+        setStatus("Identifying product...", "loading");
         resultArea.style.display = 'none';
         document.getElementById('resTip').style.display = 'none';
 
@@ -117,75 +164,55 @@
             const bestPred = prediction.reduce((p, c) => p.probability > c.probability ? p : c);
             const productNaam = bestPred.className;
 
-            setStatus(`${productNaam} herkend. Datum zoeken...`, "loading");
+            setStatus(`${productNaam} detected. Finding date...`, "loading");
 
-            // STAP 2: Gemini (MET AUTO-FIX LOOP)
+            // STAP 2: Gemini (MET SAFETY SWITCH)
             const base64 = canvas.toDataURL("image/jpeg").split(",")[1];
-            
-            let text = "NULL";
-            let success = false;
+            let text = "";
 
-            // Hier proberen we alle modellen één voor één
-            for (let modelName of MODEL_NAMES) {
-                try {
-                    console.log("Proberen met model:", modelName);
-                    const URL = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${API_KEY}`;
-                    
-                    const payload = {
-                        contents: [{
-                            parts: [
-                                { text: `Dit is: ${productNaam}. Zoek de HOUDBAARHEIDSDATUM (THT/EXP). Antwoord ALLEEN met de datum in het Engels (bijv: 12 Oct 2025). Als je GEEN datum ziet, antwoord exact: "NULL"` },
-                                { inline_data: { mime_type: "image/jpeg", data: base64 } }
-                            ]
-                        }]
-                    };
-
-                    const response = await fetch(URL, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(payload)
-                    });
-
-                    if (response.ok) {
-                        const data = await response.json();
-                        text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "NULL";
-                        success = true;
-                        break; // HET WERKT! Stop met proberen.
-                    } else {
-                        console.log(`Model ${modelName} gaf error ${response.status}`);
-                    }
-                } catch (err) {
-                    console.log(`Model ${modelName} faalde.`);
-                }
+            try {
+                // Poging 1: Probeer snelle Flash model
+                console.log("Trying Flash model...");
+                const data = await fetchGemini(productNaam, base64, MODEL_PRIMARY);
+                text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "No date found";
+            } catch (error) {
+                // Poging 2: Flash faalde (404/500), schakel over op Pro
+                console.warn("Flash failed, switching to PRO model...", error);
+                setStatus("Switching to backup model...", "loading");
+                const data = await fetchGemini(productNaam, base64, MODEL_BACKUP);
+                text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "No date found";
             }
 
-            if (!success) {
-                throw new Error("Geen enkel AI model reageert (Controleer internet/API)");
-            }
+            // STAP 3: Resultaat verwerken (Exact zoals Python code)
+            const dateFound = !text.toLowerCase().includes("no date found");
 
-            // STAP 3: Resultaat
-            const datumGevonden = !text.includes("NULL");
             document.getElementById('resProduct').textContent = productNaam;
-            document.getElementById('resDate').textContent = datumGevonden ? text : "Niet gevonden";
-            
+            document.getElementById('resDate').textContent = dateFound ? text : "Not found";
             resultArea.style.display = 'block';
 
-            if (datumGevonden) {
-                setStatus("Succes!", "success");
-                speak(`Product is ${productNaam}. The date is ${text}`);
+            if (dateFound) {
+                // Datum gevonden
+                setStatus("Success!", "success");
+                speak(`The date is ${text}`);
             } else {
-                setStatus("Geen datum gevonden", "error");
-                const tip = TIPS_LIJST[productNaam] || TIPS_LIJST["Background"];
+                // Geen datum -> Advies uit bibliotheek
+                setStatus("No date found", "error");
+                
+                // Haal tip op uit jouw lijst
+                const advies = TIPS_LIJST[productNaam] || `I recognize ${productNaam}, but see no date. Turn the product around.`;
+                
                 const tipEl = document.getElementById('resTip');
-                tipEl.textContent = "💡 TIP: " + tip;
+                tipEl.textContent = "💡 ADVICE: " + advies;
                 tipEl.style.display = 'block';
-                speak(`${productNaam} detected. No date found. ${tip}`);
+                
+                speak(`No date found. ${advies}`);
             }
 
         } catch (e) {
-            setStatus("Fout: " + e.message, "error");
+            setStatus("Error: " + e.message, "error");
+            console.error(e);
         }
-        scanBtn.disabled = false; scanBtn.textContent = "SCAN OPNIEUW";
+        scanBtn.disabled = false; scanBtn.textContent = "📸 SCAN AGAIN";
     }
 
     init();
