@@ -3,53 +3,46 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Date Recognition Ultimate</title>
+    <title>Date Scanner RAW</title>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.3.1/dist/tf.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8/dist/teachablemachine-image.min.js"></script>
     
     <style>
-        body { font-family: -apple-system, sans-serif; background: #f0f2f5; display: flex; flex-direction: column; align-items: center; padding: 20px; color: #333; }
-        .container { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); width: 100%; max-width: 500px; text-align: center; }
-        video { width: 100%; border-radius: 8px; background: black; margin-bottom: 15px; transform: scaleX(-1); }
+        body { font-family: -apple-system, sans-serif; background: #222; display: flex; flex-direction: column; align-items: center; padding: 20px; color: white; }
+        .container { background: #333; padding: 20px; border-radius: 12px; width: 100%; max-width: 500px; text-align: center; }
+        h1 { margin-bottom: 10px; color: #fff; }
+        video { width: 100%; border-radius: 8px; background: black; margin-bottom: 15px; transform: scaleX(-1); border: 2px solid #555; }
         button { background: #007bff; color: white; border: none; padding: 18px 30px; border-radius: 12px; font-size: 18px; font-weight: bold; cursor: pointer; width: 100%; margin-top: 10px; }
-        button:disabled { background: #ccc; cursor: not-allowed; }
-        .status { margin: 15px 0; padding: 12px; border-radius: 8px; font-weight: 500; font-size: 0.9em; }
-        .status.loading { background: #e3f2fd; color: #1565c0; }
-        .status.success { background: #e8f5e9; color: #2e7d32; }
-        .status.error { background: #ffebee; color: #c62828; }
-        #result { margin-top: 20px; text-align: left; display: none; }
-        .result-box { background: #f8f9fa; padding: 15px; border-radius: 8px; border-left: 5px solid #007bff; }
+        button:disabled { background: #555; cursor: not-allowed; }
+        .status { margin: 15px 0; padding: 12px; border-radius: 8px; font-weight: 500; font-family: monospace; }
+        .status.loading { background: #444; color: #ccc; }
+        .status.success { background: #1b5e20; color: #fff; }
+        .status.error { background: #b71c1c; color: #fff; }
+        #result { margin-top: 20px; text-align: left; display: none; background: #444; padding: 15px; border-radius: 8px; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h1>Date Scanner</h1>
-    <div id="status" class="status loading">System initializing...</div>
+    <h1>Date Scanner RAW</h1>
+    <div id="status" class="status loading">Initializing...</div>
     <div style="position: relative;"><video id="video" autoplay playsinline muted></video></div>
-    <button id="scanBtn" disabled>START CAMERA EERST</button>
-    <div id="result"><div class="result-box" id="resultContent"></div></div>
+    <button id="scanBtn" disabled>Loading Models...</button>
+    <div id="result"></div>
 </div>
 
-<script type="module">
-    import { GoogleGenerativeAI } from "https://esm.run/@google/generative-ai";
-
+<script>
+    // CONFIGURATIE
     const TM_MODEL_URL = "https://teachablemachine.withgoogle.com/models/hgp4ntk2z/";
-    const GEMINI_API_KEY = "AIzaSyCO2VXgEzZyE7ox-eXeTwP5VIb79w3eKp8"; 
-
-    // LIJST MET MODELLEN OM TE PROBEREN (Als de eerste faalt, pakt hij de volgende)
-    const MODEL_NAMES = [
-        "gemini-1.5-flash",
-        "gemini-1.5-flash-001",
-        "gemini-1.5-flash-002",
-        "gemini-1.5-pro"
-    ];
+    const API_KEY = "AIzaSyCO2VXgEzZyE7ox-eXeTwP5VIb79w3eKp8"; 
+    
+    // We gebruiken GEEN bibliotheek meer, maar de directe link.
+    const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`;
 
     let tmModel, videoEl = document.getElementById('video');
     let statusEl = document.getElementById('status');
     let scanBtn = document.getElementById('scanBtn');
     let resultDiv = document.getElementById('result');
-    let resultContent = document.getElementById('resultContent');
 
     function setStatus(msg, type='loading') {
         statusEl.textContent = msg;
@@ -65,14 +58,13 @@
 
     async function init() {
         try {
-            setStatus("Loading AI Models...");
             tmModel = await tmImage.load(TM_MODEL_URL + 'model.json', TM_MODEL_URL + 'metadata.json');
             const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
             videoEl.srcObject = stream;
             
             scanBtn.disabled = false;
             scanBtn.textContent = "SCAN PRODUCT";
-            setStatus("Ready. Point at product.", "success");
+            setStatus("System Ready. Mode: RAW API", "success");
             scanBtn.onclick = doScan;
         } catch (e) {
             setStatus("Init Error: " + e.message, "error");
@@ -94,42 +86,44 @@
             const prediction = await tmModel.predict(canvas);
             const product = prediction.reduce((p, c) => p.probability > c.probability ? p : c).className;
 
-            // 2. Gemini (Probeer modellen één voor één)
-            setStatus(`Product: ${product}. Finding date...`, "loading");
-            
-            const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+            setStatus(`Product: ${product}. Sending to Google...`, "loading");
+
+            // 2. Gemini via RAW FETCH (Geen libraries!)
             const base64Image = canvas.toDataURL("image/jpeg").split(",")[1];
-            const imagePart = { inlineData: { data: base64Image, mimeType: "image/jpeg" } };
-            const prompt = `This is a ${product}. Find the EXPIRATION DATE (EXP/BB/THT). Reply ONLY with the date (e.g. "12 Oct 2025"). If NO date found, reply "NULL".`;
+            
+            const payload = {
+                contents: [{
+                    parts: [
+                        { text: `You are an assistant for the blind. This is a ${product}. Find the EXPIRATION DATE (EXP/BB/THT). Reply ONLY with the date (e.g. "12 Oct 2025"). If NO date found, reply "NULL".` },
+                        { inline_data: { mime_type: "image/jpeg", data: base64Image } }
+                    ]
+                }]
+            };
 
-            let text = "NULL";
-            let success = false;
+            const response = await fetch(GEMINI_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
 
-            // --- DE MAGISCHE LOOP DIE DE ERROR OPLOST ---
-            for (const modelName of MODEL_NAMES) {
-                try {
-                    console.log("Trying model:", modelName);
-                    const model = genAI.getGenerativeModel({ model: modelName });
-                    const result = await model.generateContent([prompt, imagePart]);
-                    text = (await result.response.text()).trim();
-                    success = true;
-                    break; // Het is gelukt! Stop met proberen.
-                } catch (err) {
-                    console.warn(`Model ${modelName} failed, trying next...`, err);
-                }
+            if (!response.ok) {
+                const errData = await response.json();
+                throw new Error(errData.error?.message || "Google API Error");
             }
 
-            if (!success) throw new Error("All AI models failed. Check API Key/Network.");
-
+            const data = await response.json();
+            const text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "NULL";
             const found = !text.includes("NULL");
-            resultContent.innerHTML = `<strong>Product:</strong> ${product}<br><strong>Date:</strong> ${found ? text : "Not found"}`;
+
+            resultDiv.innerHTML = `<strong>Product:</strong> ${product}<br><strong>Date:</strong> ${found ? text : "Not found"}`;
             resultDiv.style.display = "block";
             
             setStatus(found ? "Success!" : "No date found", found ? "success" : "error");
             speak(found ? `Product is ${product}. Date is ${text}` : `Product is ${product}. No date found.`);
 
         } catch (e) {
-            setStatus("Error: " + e.message, "error");
+            setStatus("Scan Error: " + e.message, "error");
+            console.error(e);
         }
         scanBtn.disabled = false; scanBtn.textContent = "SCAN AGAIN";
     }
