@@ -8,27 +8,93 @@
     <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8/dist/teachablemachine-image.min.js"></script>
     
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #000; color: #fff; display: flex; flex-direction: column; align-items: center; min-height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }
+        /* MODERN DARK APP DESIGN */
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; 
+            background-color: #000; 
+            color: #fff; 
+            display: flex; 
+            flex-direction: column; 
+            align-items: center; 
+            min-height: 100vh; 
+            margin: 0; 
+            padding: 20px; 
+            box-sizing: border-box; 
+        }
         .container { width: 100%; max-width: 400px; display: flex; flex-direction: column; gap: 15px; }
         
-        h1 { margin: 0; font-size: 1.5rem; text-align: center; color: #3b82f6; }
+        h1 { margin: 0 0 10px 0; font-size: 1.6rem; text-align: center; color: #3b82f6; font-weight: 800; letter-spacing: -0.5px; }
         
-        .camera-wrapper { position: relative; width: 100%; border-radius: 16px; overflow: hidden; border: 2px solid #333; background: #111; aspect-ratio: 3/4; }
+        /* CAMERA FRAME */
+        .camera-wrapper { 
+            position: relative; 
+            width: 100%; 
+            border-radius: 20px; 
+            overflow: hidden; 
+            border: 2px solid #333; 
+            background: #111; 
+            aspect-ratio: 3/4; 
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        }
         video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
         
-        .status { padding: 12px; border-radius: 8px; font-size: 0.9rem; font-weight: 600; text-align: center; transition: all 0.3s ease; }
-        .status.loading { background: #2563eb; color: white; }
-        .status.success { background: #16a34a; color: white; }
-        .status.error { background: #dc2626; color: white; }
+        /* STATUS BAR */
+        .status { 
+            padding: 12px; 
+            border-radius: 12px; 
+            font-size: 0.95rem; 
+            font-weight: 600; 
+            text-align: center; 
+            transition: all 0.3s ease; 
+            background: #1f2937;
+            border: 1px solid #374151;
+        }
+        .status.loading { background: #2563eb; color: white; border-color: #2563eb; }
+        .status.success { background: #16a34a; color: white; border-color: #16a34a; }
+        .status.error { background: #dc2626; color: white; border-color: #dc2626; }
         
-        button { background: #3b82f6; color: white; border: none; padding: 16px; border-radius: 12px; font-size: 1.1rem; font-weight: 700; cursor: pointer; transition: transform 0.1s; width: 100%; box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4); }
+        /* ACTION BUTTON */
+        button { 
+            background: #3b82f6; 
+            color: white; 
+            border: none; 
+            padding: 18px; 
+            border-radius: 16px; 
+            font-size: 1.1rem; 
+            font-weight: 700; 
+            cursor: pointer; 
+            width: 100%; 
+            box-shadow: 0 4px 15px rgba(59, 130, 246, 0.4); 
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
         button:active { transform: scale(0.98); }
         button:disabled { background: #4b5563; color: #9ca3af; cursor: not-allowed; box-shadow: none; }
 
-        .result-card { background: #1f2937; border-radius: 12px; padding: 16px; display: none; border-left: 5px solid #3b82f6; margin-top: 10px; }
-        .result-title { font-size: 0.8rem; text-transform: uppercase; color: #9ca3af; letter-spacing: 0.05em; margin-bottom: 4px; }
-        .result-value { font-size: 1.2rem; font-weight: 600; color: white; margin-bottom: 12px; }
-        .tip-box { background: #374151; padding: 10px; border-radius: 8px; font-size: 0.9rem; color: #fbbf24; display: flex; align-items: start; gap: 8px; }
+        /* RESULT CARD */
+        .result-card { 
+            background: #1f2937; 
+            border-radius: 16px; 
+            padding: 20px; 
+            display: none; 
+            border-left: 6px solid #3b82f6; 
+            margin-top: 10px; 
+            box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+        }
+        .result-title { font-size: 0.75rem; text-transform: uppercase; color: #9ca3af; letter-spacing: 1px; margin-bottom: 5px; }
+        .result-value { font-size: 1.4rem; font-weight: 700; color: white; margin-bottom: 15px; }
+        
+        .tip-box { 
+            background: #374151; 
+            padding: 12px; 
+            border-radius: 10px; 
+            font-size: 0.95rem; 
+            color: #fbbf24; 
+            display: flex; 
+            align-items: start; 
+            gap: 10px; 
+            line-height: 1.4;
+        }
     </style>
 </head>
 <body>
@@ -45,7 +111,7 @@
     <button id="scanBtn" disabled>Starting Camera...</button>
     
     <div id="result-card" class="result-card">
-        <div class="result-title">Product</div>
+        <div class="result-title">Product Identified</div>
         <div class="result-value" id="resProduct">-</div>
         
         <div class="result-title">Expiration Date</div>
@@ -56,13 +122,16 @@
 </div>
 
 <script>
-    // --- 1. CONFIGURATION ---
+    // ==========================================
+    // 1. CONFIGURATION
+    // ==========================================
+    
     const TM_MODEL_URL = "https://teachablemachine.withgoogle.com/models/hgp4ntk2z/";
     
     // API KEY
     const API_KEY = "AIzaSyALqJ7iSB7Ifhy" + "_Ym-b7Hkks5dpMava18I";
 
-    // TIPS
+    // TIPS DATABASE
     const TIPS = {
         "Butter": "Check the top of the lid.",
         "Soda can": "Check the bottom of the can.",
@@ -72,7 +141,10 @@
         "General": "Try rotating the product slowly."
     };
 
-    // --- 2. LOGIC ---
+    // ==========================================
+    // 2. SYSTEM LOGIC
+    // ==========================================
+    
     let tmModel, videoEl = document.getElementById('video');
     let statusEl = document.getElementById('status');
     let scanBtn = document.getElementById('scanBtn');
@@ -83,11 +155,29 @@
         statusEl.className = `status ${type}`;
     }
 
+    // --- NIEUWE FUNCTIE: NATUURLIJKE GOOGLE STEM ---
     function speak(text) {
+        // Stop vorige audio
         window.speechSynthesis.cancel();
-        const u = new SpeechSynthesisUtterance(text);
-        u.lang = 'en-US'; 
-        window.speechSynthesis.speak(u);
+        
+        // We proberen eerst de Google Translate API (Natuurlijke stem)
+        // Dit werkt zolang je internet hebt (en dat heb je voor de VPN)
+        try {
+            const url = `https://translate.google.com/translate_tts?ie=UTF-8&tl=en&client=tw-ob&q=${encodeURIComponent(text)}`;
+            const audio = new Audio(url);
+            audio.play().catch(e => {
+                // Als de browser autoplay blokkeert of de API faalt, fallback naar robot stem
+                console.warn("Google TTS blocked, using fallback", e);
+                const u = new SpeechSynthesisUtterance(text);
+                u.lang = 'en-US'; 
+                window.speechSynthesis.speak(u);
+            });
+        } catch (e) {
+            // Fallback naar robot stem
+            const u = new SpeechSynthesisUtterance(text);
+            u.lang = 'en-US'; 
+            window.speechSynthesis.speak(u);
+        }
     }
 
     async function init() {
@@ -113,7 +203,7 @@
         resCard.style.display = 'none';
 
         try {
-            // 1. Teachable Machine
+            // STAP 1: Teachable Machine (Product Herkennen)
             const canvas = document.createElement("canvas");
             canvas.width = videoEl.videoWidth; canvas.height = videoEl.videoHeight;
             const ctx = canvas.getContext("2d");
@@ -125,11 +215,11 @@
 
             setStatus(`Found: ${product}. Reading date...`, "loading");
 
-            // 2. Gemini (Try multiple models for safety)
+            // STAP 2: Gemini (Datum Zoeken) - MET VPN WERKT DIT!
             const base64 = canvas.toDataURL("image/jpeg").split(",")[1];
             let dateText = "NULL";
             
-            // We proberen Flash, daarna Pro. MET VPN WERKT DIT GEWOON!
+            // We proberen beide modellen voor zekerheid
             const models = ["gemini-1.5-flash", "gemini-1.5-pro"];
             
             for (let model of models) {
@@ -147,36 +237,43 @@
                             }]
                         })
                     });
+                    
                     if (response.ok) {
                         const data = await response.json();
                         const t = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
                         if (t && !t.includes("NULL")) {
                             dateText = t;
-                            break; 
+                            break; // Gevonden! Stop met zoeken.
                         }
                     }
                 } catch(e) {}
             }
 
-            // 3. Resultaat
+            // STAP 3: Resultaat Tonen
             const found = !dateText.includes("NULL");
             
             document.getElementById('resProduct').textContent = product;
             document.getElementById('resDate').textContent = found ? dateText : "Not found";
             
             const tipEl = document.getElementById('resTip');
-            if (!found) {
+            
+            if (found) {
+                // DATUM GEVONDEN
+                tipEl.style.display = 'none';
+                resCard.style.borderLeftColor = "#16a34a"; // Groen randje
+                setStatus("Success! Safe to consume.", "success");
+                speak(`The expiration date is ${dateText}`);
+            } else {
+                // NIET GEVONDEN
                 const tip = TIPS[product] || TIPS["General"];
                 tipEl.textContent = "💡 " + tip;
                 tipEl.style.display = 'flex';
+                resCard.style.borderLeftColor = "#dc2626"; // Rood randje
+                setStatus("Date not found", "error");
                 speak(`No date found. ${tip}`);
-            } else {
-                tipEl.style.display = 'none';
-                speak(`The date is ${dateText}`);
             }
             
             resCard.style.display = 'block';
-            setStatus(found ? "Success!" : "Date not found", found ? "success" : "error");
 
         } catch (e) {
             setStatus("Error: " + e.message, "error");
