@@ -36,6 +36,7 @@
             aspect-ratio: 3/4; 
             box-shadow: 0 10px 30px rgba(0,0,0,0.5);
         }
+        /* Spiegelbeeld voor natuurlijk camera gevoel */
         video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
         
         /* STATUS BAR */
@@ -155,29 +156,34 @@
         statusEl.className = `status ${type}`;
     }
 
-    // --- NIEUWE FUNCTIE: NATUURLIJKE GOOGLE STEM ---
+    // --- DE NIEUWE STEM FUNCTIE (GOOGLE TRANSLATE HACK) ---
     function speak(text) {
-        // Stop vorige audio
+        // Stop eventuele vorige audio
         window.speechSynthesis.cancel();
         
-        // We proberen eerst de Google Translate API (Natuurlijke stem)
-        // Dit werkt zolang je internet hebt (en dat heb je voor de VPN)
+        // We proberen de Google Translate API aan te roepen voor MP3 audio
         try {
+            // Encode de tekst voor de URL
             const url = `https://translate.google.com/translate_tts?ie=UTF-8&tl=en&client=tw-ob&q=${encodeURIComponent(text)}`;
             const audio = new Audio(url);
+            
+            // Speel af
             audio.play().catch(e => {
-                // Als de browser autoplay blokkeert of de API faalt, fallback naar robot stem
-                console.warn("Google TTS blocked, using fallback", e);
-                const u = new SpeechSynthesisUtterance(text);
-                u.lang = 'en-US'; 
-                window.speechSynthesis.speak(u);
+                // Als dit faalt (bv. door browser beveiliging), val terug op de robotstem
+                console.warn("Google Voice failed, using fallback:", e);
+                fallbackSpeak(text);
             });
         } catch (e) {
-            // Fallback naar robot stem
-            const u = new SpeechSynthesisUtterance(text);
-            u.lang = 'en-US'; 
-            window.speechSynthesis.speak(u);
+            fallbackSpeak(text);
         }
+    }
+
+    // Fallback naar de browser-stem (voor zekerheid)
+    function fallbackSpeak(text) {
+        const u = new SpeechSynthesisUtterance(text);
+        u.lang = 'en-US'; 
+        u.rate = 1.0;
+        window.speechSynthesis.speak(u);
     }
 
     async function init() {
@@ -204,85 +210,7 @@
 
         try {
             // STAP 1: Teachable Machine (Product Herkennen)
+            // We spiegelen NIET voor TM (tenzij je dat bij trainen deed), 
+            // maar meestal werkt de standaard setup goed in de browser.
             const canvas = document.createElement("canvas");
-            canvas.width = videoEl.videoWidth; canvas.height = videoEl.videoHeight;
-            const ctx = canvas.getContext("2d");
-            ctx.drawImage(videoEl, 0, 0);
-            
-            const prediction = await tmModel.predict(canvas);
-            const bestPred = prediction.reduce((p, c) => p.probability > c.probability ? p : c);
-            const product = bestPred.className;
-
-            setStatus(`Found: ${product}. Reading date...`, "loading");
-
-            // STAP 2: Gemini (Datum Zoeken) - MET VPN WERKT DIT!
-            const base64 = canvas.toDataURL("image/jpeg").split(",")[1];
-            let dateText = "NULL";
-            
-            // We proberen beide modellen voor zekerheid
-            const models = ["gemini-1.5-flash", "gemini-1.5-pro"];
-            
-            for (let model of models) {
-                try {
-                    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${API_KEY}`;
-                    const response = await fetch(url, {
-                        method: 'POST',
-                        headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify({
-                            contents: [{
-                                parts: [
-                                    { text: `This is ${product}. Find EXPIRATION DATE. Reply ONLY date in English (e.g. 12 Oct 2025) or 'NULL'.` },
-                                    { inline_data: { mime_type: "image/jpeg", data: base64 } }
-                                ]
-                            }]
-                        })
-                    });
-                    
-                    if (response.ok) {
-                        const data = await response.json();
-                        const t = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-                        if (t && !t.includes("NULL")) {
-                            dateText = t;
-                            break; // Gevonden! Stop met zoeken.
-                        }
-                    }
-                } catch(e) {}
-            }
-
-            // STAP 3: Resultaat Tonen
-            const found = !dateText.includes("NULL");
-            
-            document.getElementById('resProduct').textContent = product;
-            document.getElementById('resDate').textContent = found ? dateText : "Not found";
-            
-            const tipEl = document.getElementById('resTip');
-            
-            if (found) {
-                // DATUM GEVONDEN
-                tipEl.style.display = 'none';
-                resCard.style.borderLeftColor = "#16a34a"; // Groen randje
-                setStatus("Success! Safe to consume.", "success");
-                speak(`The expiration date is ${dateText}`);
-            } else {
-                // NIET GEVONDEN
-                const tip = TIPS[product] || TIPS["General"];
-                tipEl.textContent = "💡 " + tip;
-                tipEl.style.display = 'flex';
-                resCard.style.borderLeftColor = "#dc2626"; // Rood randje
-                setStatus("Date not found", "error");
-                speak(`No date found. ${tip}`);
-            }
-            
-            resCard.style.display = 'block';
-
-        } catch (e) {
-            setStatus("Error: " + e.message, "error");
-        }
-        scanBtn.disabled = false; scanBtn.textContent = "📸 SCAN AGAIN";
-    }
-
-    init();
-</script>
-
-</body>
-</html>
+            canvas.width = videoEl.videoWidth; canvas.
