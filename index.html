@@ -11,7 +11,7 @@
         body { font-family: -apple-system, sans-serif; background: #f0f2f5; display: flex; flex-direction: column; align-items: center; padding: 20px; color: #333; }
         .container { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); width: 100%; max-width: 500px; text-align: center; }
         h1 { margin-bottom: 10px; }
-        video { width: 100%; border-radius: 8px; background: black; margin-bottom: 15px; transform: scaleX(-1); /* Spiegelen voor natuurlijk gevoel */ }
+        video { width: 100%; border-radius: 8px; background: black; margin-bottom: 15px; transform: scaleX(-1); }
         button { background: #007bff; color: white; border: none; padding: 18px 30px; border-radius: 12px; font-size: 18px; font-weight: bold; cursor: pointer; width: 100%; margin-top: 10px; transition: background 0.2s; }
         button:hover { background: #0056b3; }
         button:disabled { background: #ccc; cursor: not-allowed; }
@@ -43,13 +43,10 @@
 </div>
 
 <script type="module">
-    // Importeer Gemini direct (geen server nodig)
     import { GoogleGenerativeAI } from "https://esm.run/@google/generative-ai";
 
-    // --- CONFIGURATIE ---
+    // --- JOUW INGEVULDE KEY EN MODEL ---
     const TM_MODEL_URL = "https://teachablemachine.withgoogle.com/models/hgp4ntk2z/";
-    
-    // API KEY IS HIER INGEVULD
     const GEMINI_API_KEY = "AIzaSyCO2VXgEzZyE7ox-eXeTwP5VIb79w3eKp8"; 
 
     // Variabelen
@@ -60,13 +57,11 @@
     const resultDiv = document.getElementById('result');
     const resultContent = document.getElementById('resultContent');
 
-    // Helper: Status updaten
     function setStatus(msg, type='loading') {
         statusEl.textContent = msg;
         statusEl.className = `status ${type}`;
     }
 
-    // Helper: Spraak
     function speak(text) {
         window.speechSynthesis.cancel();
         const u = new SpeechSynthesisUtterance(text);
@@ -74,19 +69,14 @@
         window.speechSynthesis.speak(u);
     }
 
-    // STAP 1: Start Alles (Modellen laden + Camera)
     async function init() {
         try {
             setStatus("Loading Teachable Machine & AI...");
-            
-            // 1. Laad jouw Teachable Machine model (via Google link)
             tmModel = await tmImage.load(TM_MODEL_URL + 'model.json', TM_MODEL_URL + 'metadata.json');
             
-            // 2. Start Camera
-            stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+            const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
             videoEl.srcObject = stream;
             
-            // Klaar voor start
             scanBtn.disabled = false;
             scanBtn.textContent = "SCAN PRODUCT";
             setStatus("Ready. Point at product.", "success");
@@ -98,7 +88,6 @@
         }
     }
 
-    // STAP 2: De Scan Actie (Hier gebeurt alles)
     async function doScan() {
         if (GEMINI_API_KEY.includes("VUL_HIER")) { alert("STOP! Vul eerst je API Key in de code in."); return; }
 
@@ -107,29 +96,25 @@
         resultDiv.style.display = "none";
 
         try {
-            // A. Maak foto van video
             const canvas = document.createElement("canvas");
             canvas.width = videoEl.videoWidth; canvas.height = videoEl.videoHeight;
             const ctx = canvas.getContext("2d");
             ctx.drawImage(videoEl, 0, 0);
 
-            // B. STAP 1: Teachable Machine Herkenning
+            // 1. Teachable Machine
             const prediction = await tmModel.predict(canvas);
-            // Pak de beste voorspelling
             const bestPred = prediction.reduce((p, c) => p.probability > c.probability ? p : c);
             const productName = bestPred.className;
 
-            // C. STAP 2: Gemini Datum Lezen (Direct vanuit browser)
+            // 2. Gemini
             const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
             
-            // --- HIER ZIT DE FIX: MODEL NAAM AANGEPAST ---
-            const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
+            // --- HIER IS DE CORRECTIE: GEWOON "gemini-1.5-flash" ---
+            const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
-            // Converteer foto voor Gemini
             const base64Image = canvas.toDataURL("image/jpeg").split(",")[1];
             const imagePart = { inlineData: { data: base64Image, mimeType: "image/jpeg" } };
 
-            // De agressieve prompt, MET het product dat TM heeft gevonden
             const prompt = `You are an assistant for the blind. This is a ${productName}. Find the EXPIRATION DATE (EXP/BB/THT). 
             Search aggressively for dates (dd-mm-yy, mm/yyyy). Ignore barcodes.
             Reply ONLY with the date in English (e.g., "15 Oct 2025"). If absolutely NO date is found, reply "NULL".`;
@@ -139,7 +124,6 @@
             const cleanDate = responseText.trim();
             const dateFound = !cleanDate.includes("NULL");
 
-            // D. Resultaten tonen
             let displayHtml = `<strong>Product Identified:</strong> ${productName}<br>`;
             if (dateFound) {
                 displayHtml += `<strong>Date Found:</strong> ${cleanDate}`;
@@ -163,7 +147,6 @@
         scanBtn.disabled = false; scanBtn.textContent = "SCAN AGAIN";
     }
 
-    // Start direct bij laden pagina
     init();
 </script>
 
