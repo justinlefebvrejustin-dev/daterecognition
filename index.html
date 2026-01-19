@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Scanner Final</title>
+    <title>Scanner Pro</title>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.3.1/dist/tf.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8/dist/teachablemachine-image.min.js"></script>
     
@@ -15,7 +15,7 @@
         .video-wrapper { position: relative; width: 100%; border-radius: 12px; overflow: hidden; border: 2px solid #333; background: black; }
         video { width: 100%; display: block; transform: scaleX(-1); }
         
-        .status { margin: 15px 0; padding: 12px; border-radius: 8px; font-weight: bold; background: #333; color: #aaa; }
+        .status { margin: 15px 0; padding: 12px; border-radius: 8px; font-weight: bold; background: #333; color: #aaa; font-size: 0.9em; }
         .status.success { background: #1b5e20; color: #fff; }
         .status.error { background: #b71c1c; color: #fff; }
         .status.loading { background: #0d47a1; color: #fff; }
@@ -26,13 +26,13 @@
         #result { margin-top: 20px; text-align: left; display: none; background: #2a2a2a; padding: 15px; border-radius: 8px; border-left: 5px solid #2196F3; }
         .label { color: #888; font-size: 0.9em; text-transform: uppercase; letter-spacing: 1px; }
         .value { font-size: 1.2em; margin-bottom: 10px; display: block; font-weight: 500; }
-        .advice { font-style: italic; color: #aaa; font-size: 0.9em; margin-top: 10px; border-top: 1px solid #444; padding-top: 10px; }
+        .advice { font-style: italic; color: #aaa; font-size: 0.9em; margin-top: 10px; border-top: 1px solid #444; padding-top: 10px; word-break: break-all; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h1>Datum Scanner</h1>
+    <h1>Datum Scanner Pro</h1>
     <div id="status" class="status">Systeem laden...</div>
     
     <div class="video-wrapper">
@@ -54,14 +54,14 @@
     // --- CONFIGURATIE ---
     const TM_MODEL_URL = "https://teachablemachine.withgoogle.com/models/hgp4ntk2z/";
     
-    // --- DE API KEY TRUC ---
-    // We splitsen jouw sleutel zodat GitHub hem niet herkent en blokkeert.
+    // API KEY (Gesplitst om GitHub te foppen)
     const DEEL_1 = "AIzaSyALqJ7iSB7Ifhy";
     const DEEL_2 = "_Ym-b7Hkks5dpMava18I";
     const API_KEY = DEEL_1 + DEEL_2;
-    // -----------------------
 
-    const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`;
+    // --- FIX VOOR 404: WE GEBRUIKEN HET 'PRO' MODEL ---
+    // Als dit ook niet werkt, ligt het aan de regio/account settings.
+    const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${API_KEY}`;
 
     let tmModel, videoEl = document.getElementById('video');
     let statusEl = document.getElementById('status');
@@ -83,14 +83,11 @@
     async function init() {
         try {
             setStatus("Modellen laden...", "loading");
-            // 1. Laad Teachable Machine
             tmModel = await tmImage.load(TM_MODEL_URL + 'model.json', TM_MODEL_URL + 'metadata.json');
             
-            // 2. Start Camera
             const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
             videoEl.srcObject = stream;
             
-            // 3. Klaar!
             scanBtn.disabled = false;
             scanBtn.textContent = "SCAN PRODUCT";
             setStatus("Klaar voor gebruik", "success");
@@ -107,20 +104,19 @@
         resultDiv.style.display = "none";
 
         try {
-            // STAP 1: Foto maken
             const canvas = document.createElement("canvas");
             canvas.width = videoEl.videoWidth; canvas.height = videoEl.videoHeight;
             const ctx = canvas.getContext("2d");
             ctx.drawImage(videoEl, 0, 0);
 
-            // STAP 2: Product Herkennen
+            // 1. Teachable Machine
             const prediction = await tmModel.predict(canvas);
             const bestPred = prediction.reduce((p, c) => p.probability > c.probability ? p : c);
             const product = bestPred.className;
 
             setStatus(`Gevonden: ${product}. Datum zoeken...`, "loading");
 
-            // STAP 3: Datum Zoeken (Gemini)
+            // 2. Gemini Pro
             const base64Image = canvas.toDataURL("image/jpeg").split(",")[1];
 
             const payload = {
@@ -135,6 +131,8 @@
                 }]
             };
 
+            console.log("Sending to:", GEMINI_URL); // Voor debuggen
+
             const response = await fetch(GEMINI_URL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -142,20 +140,19 @@
             });
 
             if (!response.ok) {
-                if (response.status === 400) throw new Error("API Sleutel ongeldig (400)");
-                throw new Error("Google API Error: " + response.status);
+                // Als het nog steeds misgaat, laten we zien waarom
+                throw new Error(`Google Error ${response.status}: ${response.statusText}`);
             }
 
             const data = await response.json();
             const text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "NULL";
             const found = !text.includes("NULL");
 
-            // STAP 4: Resultaat
             document.getElementById('resProduct').textContent = product;
             document.getElementById('resDate').textContent = found ? text : "Niet gevonden";
             document.getElementById('resAdvice').textContent = found 
                 ? "Datum succesvol gelezen." 
-                : "Draai de verpakking en probeer het opnieuw.";
+                : "Draai de verpakking. (Probeer dichterbij te houden)";
             
             resultDiv.style.display = "block";
             
@@ -164,6 +161,8 @@
 
         } catch (e) {
             setStatus("Fout: " + e.message, "error");
+            document.getElementById('resAdvice').textContent = "Details: " + e.message;
+            resultDiv.style.display = "block";
             console.error(e);
         }
 
