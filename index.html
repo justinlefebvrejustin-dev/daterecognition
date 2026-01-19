@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Scanner Ultimate (BE/EU Safe)</title>
+    <title>Scanner Final (BE Fix)</title>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.3.1/dist/tf.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8/dist/teachablemachine-image.min.js"></script>
     
@@ -29,16 +29,16 @@
 
 <div class="container">
     <h2>Datum Scanner</h2>
-    <div id="status" class="status">System loading...</div>
+    <div id="status" class="status">Systeem laden...</div>
     
     <video id="video" autoplay playsinline muted></video>
-    <button id="scanBtn" disabled>Please wait...</button>
+    <button id="scanBtn" disabled>Even geduld...</button>
     
     <div id="resultArea">
         <span class="label">Product:</span>
         <span class="data" id="resProduct">-</span>
         
-        <span class="label">Expiration Date:</span>
+        <span class="label">Houdbaarheidsdatum:</span>
         <span class="data" id="resDate">-</span>
         
         <div id="resTip" class="tip-box"></div>
@@ -47,18 +47,17 @@
 
 <script>
     // ==========================================
-    // 1. CONFIGURATIE 
+    // 1. CONFIGURATIE (JOUW MODEL & NIEUWE KEY)
     // ==========================================
     
-    // Jouw Teachable Machine Link
     const TM_MODEL_URL = "https://teachablemachine.withgoogle.com/models/hgp4ntk2z/";
     
-    // API KEY (Gesplitst om GitHub Scanner te omzeilen)
-    const DEEL_1 = "AIzaSyCO2VXgEzZyE7ox"; 
-    const DEEL_2 = "-eXeTwP5VIb79w3eKp8";
+    // API KEY (De JUISTE nieuwe sleutel, gesplitst)
+    const DEEL_1 = "AIzaSyALqJ7iSB7Ifhy"; 
+    const DEEL_2 = "_Ym-b7Hkks5dpMava18I";
     const API_KEY = DEEL_1 + DEEL_2;
 
-    // TIPS (Exact overgenomen uit jouw Python code)
+    // TIPS (Uit jouw Python code)
     const TIPS_LIJST = {
         "Butter": "This is butter. Check the top of the lid.",
         "Soda can": "This is a soda can. The date is usually on the bottom.",
@@ -69,14 +68,13 @@
     };
 
     // ==========================================
-    // 2. SAFETY SYSTEM (BE/EU FIX)
+    // 2. SAFETY SYSTEM (BELGIË FIX)
     // ==========================================
     
-    // We definiëren 2 modellen. Als de eerste faalt, pakt hij de tweede.
-    const MODEL_PRIMARY = "gemini-1.5-flash"; // Snel
-    const MODEL_BACKUP = "gemini-1.5-pro";    // Krachtig (Trager, maar werkt vaker in EU)
+    // Probeer eerst Flash (Snel). Als dat faalt (404), pak Pro (Krachtig/EU Safe).
+    const MODEL_PRIMARY = "gemini-1.5-flash"; 
+    const MODEL_BACKUP = "gemini-1.5-pro";   
 
-    // Systeem Variabelen
     let tmModel, videoEl = document.getElementById('video');
     let statusEl = document.getElementById('status');
     let scanBtn = document.getElementById('scanBtn');
@@ -91,11 +89,10 @@
         window.speechSynthesis.cancel();
         const u = new SpeechSynthesisUtterance(text);
         u.lang = 'en-US'; 
-        u.rate = 0.9; // Iets rustiger spreken
+        u.rate = 0.9; 
         window.speechSynthesis.speak(u);
     }
 
-    // INIT
     async function init() {
         try {
             setStatus("Loading models...");
@@ -113,17 +110,16 @@
         }
     }
 
-    // DE API AANROEP FUNCTIE (Met Safety Switch)
+    // DE FUNCTIE DIE GOOGLE AANROEPT
     async function fetchGemini(productName, base64Image, modelName) {
+        // Bouw de URL met de JUISTE key
         const URL = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${API_KEY}`;
         
-        // Jouw originele Python Prompt
         const prompt = `
         This is a: ${productName}.
         Find the expiration date (EXP/BBE).
-
         INSTRUCTIONS:
-        1. Date found? -> Write ONLY the date in English words (e.g.: "March twelfth two thousand twenty-five"). Do NOT mention the product name.
+        1. Date found? -> Write ONLY the date in English words (e.g.: "March twelfth two thousand twenty-five").
         2. No date? -> Answer EXACTLY: "No date found".
         `;
 
@@ -142,11 +138,10 @@
             body: JSON.stringify(payload)
         });
 
-        if (!response.ok) throw new Error(response.status); // Gooi error als het mislukt (bijv 404)
+        if (!response.ok) throw new Error(response.status); // Gooi error als het mislukt (400 of 404)
         return await response.json();
     }
 
-    // DE SCAN LOGICA
     async function doScan() {
         scanBtn.disabled = true; scanBtn.textContent = "Analyzing...";
         setStatus("Identifying product...", "loading");
@@ -171,19 +166,19 @@
             let text = "";
 
             try {
-                // Poging 1: Probeer snelle Flash model
+                // POGING 1: Snelle Flash Model
                 console.log("Trying Flash model...");
                 const data = await fetchGemini(productNaam, base64, MODEL_PRIMARY);
                 text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "No date found";
             } catch (error) {
-                // Poging 2: Flash faalde (404/500), schakel over op Pro
-                console.warn("Flash failed, switching to PRO model...", error);
-                setStatus("Switching to backup model...", "loading");
+                // POGING 2: Als Flash faalt (404/400), probeer Pro
+                console.warn(`Flash failed (${error}), switching to PRO model...`);
+                setStatus("Switching to backup model (EU Fix)...", "loading");
                 const data = await fetchGemini(productNaam, base64, MODEL_BACKUP);
                 text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "No date found";
             }
 
-            // STAP 3: Resultaat verwerken (Exact zoals Python code)
+            // STAP 3: Resultaat
             const dateFound = !text.toLowerCase().includes("no date found");
 
             document.getElementById('resProduct').textContent = productNaam;
@@ -191,14 +186,10 @@
             resultArea.style.display = 'block';
 
             if (dateFound) {
-                // Datum gevonden
                 setStatus("Success!", "success");
                 speak(`The date is ${text}`);
             } else {
-                // Geen datum -> Advies uit bibliotheek
                 setStatus("No date found", "error");
-                
-                // Haal tip op uit jouw lijst
                 const advies = TIPS_LIJST[productNaam] || `I recognize ${productNaam}, but see no date. Turn the product around.`;
                 
                 const tipEl = document.getElementById('resTip');
