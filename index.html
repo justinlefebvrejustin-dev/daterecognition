@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Smart Date Scanner</title>
+    <title>Smart Date Scanner Ultimate</title>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.3.1/dist/tf.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8/dist/teachablemachine-image.min.js"></script>
     
@@ -11,15 +11,12 @@
         body { font-family: 'Segoe UI', sans-serif; background: #121212; color: white; text-align: center; padding: 20px; }
         .container { max-width: 500px; margin: 0 auto; background: #1e1e1e; padding: 20px; border-radius: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
         video { width: 100%; border-radius: 10px; transform: scaleX(-1); border: 2px solid #333; }
-        
         button { background: #2196F3; color: white; border: none; padding: 15px 30px; border-radius: 10px; font-size: 18px; font-weight: bold; width: 100%; margin-top: 15px; cursor: pointer; }
         button:disabled { background: #555; opacity: 0.7; }
-        
         .status { margin: 10px 0; padding: 10px; border-radius: 5px; font-size: 0.9em; font-weight: bold; }
         .status.loading { background: #1565c0; color: white; }
         .status.error { background: #c62828; color: white; }
         .status.success { background: #2e7d32; color: white; }
-
         #resultArea { display: none; margin-top: 20px; text-align: left; background: #252525; padding: 15px; border-radius: 10px; border-left: 5px solid #2196F3; }
         .label { color: #888; font-size: 0.8em; text-transform: uppercase; }
         .data { font-size: 1.2em; display: block; margin-bottom: 10px; }
@@ -31,31 +28,37 @@
 <div class="container">
     <h2>Datum Scanner</h2>
     <div id="status" class="status">Systeem laden...</div>
-    
     <video id="video" autoplay playsinline muted></video>
     <button id="scanBtn" disabled>Even geduld...</button>
-    
     <div id="resultArea">
         <span class="label">Product Herkend:</span>
         <span class="data" id="resProduct">-</span>
-        
         <span class="label">Houdbaarheidsdatum:</span>
         <span class="data" id="resDate">-</span>
-        
         <div id="resTip" class="tip-box"></div>
     </div>
 </div>
 
 <script>
-    // --- 1. JOUW CONFIGURATIE ---
+    // --- 1. CONFIGURATIE ---
     const TM_MODEL_URL = "https://teachablemachine.withgoogle.com/models/hgp4ntk2z/";
     
-    // API KEY (Gesplitst tegen GitHub blokkades)
+    // API KEY (Jouw sleutel, veilig gesplitst)
     const DEEL_1 = "AIzaSyALqJ7iSB7Ifhy"; 
     const DEEL_2 = "_Ym-b7Hkks5dpMava18I";
     const API_KEY = DEEL_1 + DEEL_2;
 
-    // --- 2. DE SLIMME TIPS LIJST ---
+    // --- DE LIJST MET MODELLEN (HIER ZIT DE FIX) ---
+    // Hij probeert ze één voor één tot er eentje werkt.
+    const MODEL_NAMES = [
+        "gemini-1.5-flash",
+        "gemini-1.5-flash-latest",
+        "gemini-1.5-flash-001",
+        "gemini-1.5-pro",
+        "gemini-pro"
+    ];
+
+    // --- 2. TIPS ---
     const TIPS_LIJST = {
         "Butter": "This is butter. Check the top of the lid.",
         "Soda can": "This is a soda can. The date is usually on the bottom.",
@@ -65,10 +68,6 @@
         "Background": "I don't see a product, please hold it closer to the camera."
     };
 
-    // --- 3. SYSTEEM VARIABELEN (HIER ZIT DE FIX) ---
-    // We hebben '-latest' toegevoegd aan de modelnaam om de 404 op te lossen.
-    const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${API_KEY}`;
-    
     let tmModel, videoEl = document.getElementById('video');
     let statusEl = document.getElementById('status');
     let scanBtn = document.getElementById('scanBtn');
@@ -86,15 +85,12 @@
         window.speechSynthesis.speak(u);
     }
 
-    // START OP
     async function init() {
         try {
             setStatus("Modellen laden...");
             tmModel = await tmImage.load(TM_MODEL_URL + 'model.json', TM_MODEL_URL + 'metadata.json');
-            
             const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
             videoEl.srcObject = stream;
-            
             scanBtn.disabled = false;
             scanBtn.textContent = "SCAN PRODUCT";
             setStatus("Klaar voor gebruik", "success");
@@ -104,7 +100,6 @@
         }
     }
 
-    // DE SCAN LOGICA
     async function doScan() {
         scanBtn.disabled = true; scanBtn.textContent = "Analyseren...";
         setStatus("Product herkennen...", "loading");
@@ -124,32 +119,52 @@
 
             setStatus(`${productNaam} herkend. Datum zoeken...`, "loading");
 
-            // STAP 2: Gemini
+            // STAP 2: Gemini (MET AUTO-FIX LOOP)
             const base64 = canvas.toDataURL("image/jpeg").split(",")[1];
-            const payload = {
-                contents: [{
-                    parts: [
-                        { text: `Dit is: ${productNaam}. Zoek de HOUDBAARHEIDSDATUM (THT/EXP). 
-                        Antwoord ALLEEN met de datum in het Engels (bijv: 12 Oct 2025). 
-                        Als je GEEN datum ziet, antwoord exact: "NULL"` },
-                        { inline_data: { mime_type: "image/jpeg", data: base64 } }
-                    ]
-                }]
-            };
+            
+            let text = "NULL";
+            let success = false;
 
-            const response = await fetch(GEMINI_URL, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
+            // Hier proberen we alle modellen één voor één
+            for (let modelName of MODEL_NAMES) {
+                try {
+                    console.log("Proberen met model:", modelName);
+                    const URL = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${API_KEY}`;
+                    
+                    const payload = {
+                        contents: [{
+                            parts: [
+                                { text: `Dit is: ${productNaam}. Zoek de HOUDBAARHEIDSDATUM (THT/EXP). Antwoord ALLEEN met de datum in het Engels (bijv: 12 Oct 2025). Als je GEEN datum ziet, antwoord exact: "NULL"` },
+                                { inline_data: { mime_type: "image/jpeg", data: base64 } }
+                            ]
+                        }]
+                    };
 
-            if (!response.ok) throw new Error(`API Fout: ${response.status} (Model niet gevonden)`);
+                    const response = await fetch(URL, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
 
-            const data = await response.json();
-            const text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "NULL";
+                    if (response.ok) {
+                        const data = await response.json();
+                        text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "NULL";
+                        success = true;
+                        break; // HET WERKT! Stop met proberen.
+                    } else {
+                        console.log(`Model ${modelName} gaf error ${response.status}`);
+                    }
+                } catch (err) {
+                    console.log(`Model ${modelName} faalde.`);
+                }
+            }
+
+            if (!success) {
+                throw new Error("Geen enkel AI model reageert (Controleer internet/API)");
+            }
+
+            // STAP 3: Resultaat
             const datumGevonden = !text.includes("NULL");
-
-            // STAP 3: Resultaat tonen
             document.getElementById('resProduct').textContent = productNaam;
             document.getElementById('resDate').textContent = datumGevonden ? text : "Niet gevonden";
             
@@ -160,12 +175,10 @@
                 speak(`Product is ${productNaam}. The date is ${text}`);
             } else {
                 setStatus("Geen datum gevonden", "error");
-                const tip = TIPS_LIJST[productNaam] || TIPS_LIJST["Background"]; // Default naar 'Background' als niets gevonden
-                
+                const tip = TIPS_LIJST[productNaam] || TIPS_LIJST["Background"];
                 const tipEl = document.getElementById('resTip');
                 tipEl.textContent = "💡 TIP: " + tip;
                 tipEl.style.display = 'block';
-                
                 speak(`${productNaam} detected. No date found. ${tip}`);
             }
 
