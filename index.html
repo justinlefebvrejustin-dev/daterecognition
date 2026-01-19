@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Scanner Final (BE Fix)</title>
+    <title>Scanner Final SDK</title>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.3.1/dist/tf.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8/dist/teachablemachine-image.min.js"></script>
     
@@ -28,37 +28,39 @@
 <body>
 
 <div class="container">
-    <h2>Datum Scanner</h2>
-    <div id="status" class="status">Systeem laden...</div>
+    <h2>Date Scanner</h2>
+    <div id="status" class="status">System loading...</div>
     
     <video id="video" autoplay playsinline muted></video>
-    <button id="scanBtn" disabled>Even geduld...</button>
+    <button id="scanBtn" disabled>Please wait...</button>
     
     <div id="resultArea">
         <span class="label">Product:</span>
         <span class="data" id="resProduct">-</span>
         
-        <span class="label">Houdbaarheidsdatum:</span>
+        <span class="label">Expiration Date:</span>
         <span class="data" id="resDate">-</span>
         
         <div id="resTip" class="tip-box"></div>
     </div>
 </div>
 
-<script>
+<script type="module">
+    // We importeren de officiële Google SDK direct van het internet
+    import { GoogleGenerativeAI } from "https://esm.run/@google/generative-ai";
+
     // ==========================================
-    // 1. CONFIGURATIE (JOUW MODEL & NIEUWE KEY)
+    // 1. CONFIGURATION
     // ==========================================
     
     const TM_MODEL_URL = "https://teachablemachine.withgoogle.com/models/hgp4ntk2z/";
     
-    // API KEY (De JUISTE nieuwe sleutel, gesplitst)
+    // API KEY (Gesplitst)
     const DEEL_1 = "AIzaSyALqJ7iSB7Ifhy"; 
     const DEEL_2 = "_Ym-b7Hkks5dpMava18I";
     const API_KEY = DEEL_1 + DEEL_2;
 
-    // TIPS (Uit jouw Python code)
-    const TIPS_LIJST = {
+    const TIPS_LIST = {
         "Butter": "This is butter. Check the top of the lid.",
         "Soda can": "This is a soda can. The date is usually on the bottom.",
         "Slices of meat": "This is a package with slices of meat. The date is usually on the top of the package.",
@@ -67,13 +69,8 @@
         "Background": "I don't see a product, please hold it closer to the camera."
     };
 
-    // ==========================================
-    // 2. SAFETY SYSTEM (BELGIË FIX)
-    // ==========================================
-    
-    // Probeer eerst Flash (Snel). Als dat faalt (404), pak Pro (Krachtig/EU Safe).
-    const MODEL_PRIMARY = "gemini-1.5-flash"; 
-    const MODEL_BACKUP = "gemini-1.5-pro";   
+    // MODELS OM TE TESTEN (Volgorde van prioriteit)
+    const MODELS_TO_TRY = ["gemini-1.5-flash", "gemini-1.5-flash-latest", "gemini-1.5-pro"];
 
     let tmModel, videoEl = document.getElementById('video');
     let statusEl = document.getElementById('status');
@@ -93,9 +90,11 @@
         window.speechSynthesis.speak(u);
     }
 
+    // Initialize Teachable Machine & Camera
     async function init() {
         try {
             setStatus("Loading models...");
+            // Teachable Machine laden (Dit staat los van de module import)
             tmModel = await tmImage.load(TM_MODEL_URL + 'model.json', TM_MODEL_URL + 'metadata.json');
             
             const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
@@ -104,44 +103,16 @@
             scanBtn.disabled = false;
             scanBtn.textContent = "📸 SCAN NOW";
             setStatus("Ready. Point at product.", "success");
+            
+            // Koppel de klik functie (moet binnen module scope)
             scanBtn.onclick = doScan;
+            
         } catch (e) {
             setStatus("Camera Error: " + e.message, "error");
         }
     }
 
-    // DE FUNCTIE DIE GOOGLE AANROEPT
-    async function fetchGemini(productName, base64Image, modelName) {
-        // Bouw de URL met de JUISTE key
-        const URL = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${API_KEY}`;
-        
-        const prompt = `
-        This is a: ${productName}.
-        Find the expiration date (EXP/BBE).
-        INSTRUCTIONS:
-        1. Date found? -> Write ONLY the date in English words (e.g.: "March twelfth two thousand twenty-five").
-        2. No date? -> Answer EXACTLY: "No date found".
-        `;
-
-        const payload = {
-            contents: [{
-                parts: [
-                    { text: prompt },
-                    { inline_data: { mime_type: "image/jpeg", data: base64Image } }
-                ]
-            }]
-        };
-
-        const response = await fetch(URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
-
-        if (!response.ok) throw new Error(response.status); // Gooi error als het mislukt (400 of 404)
-        return await response.json();
-    }
-
+    // --- DE INTELLIGENTE SCAN FUNCTIE ---
     async function doScan() {
         scanBtn.disabled = true; scanBtn.textContent = "Analyzing...";
         setStatus("Identifying product...", "loading");
@@ -157,31 +128,57 @@
             
             const prediction = await tmModel.predict(canvas);
             const bestPred = prediction.reduce((p, c) => p.probability > c.probability ? p : c);
-            const productNaam = bestPred.className;
+            const productName = bestPred.className;
 
-            setStatus(`${productNaam} detected. Finding date...`, "loading");
+            setStatus(`${productName} detected. Finding date...`, "loading");
 
-            // STAP 2: Gemini (MET SAFETY SWITCH)
-            const base64 = canvas.toDataURL("image/jpeg").split(",")[1];
+            // STAP 2: Gemini via SDK (Met Auto-Retry)
+            const genAI = new GoogleGenerativeAI(API_KEY);
+            const base64Image = canvas.toDataURL("image/jpeg").split(",")[1];
+            
             let text = "";
+            let success = false;
+            let lastError = "";
 
-            try {
-                // POGING 1: Snelle Flash Model
-                console.log("Trying Flash model...");
-                const data = await fetchGemini(productNaam, base64, MODEL_PRIMARY);
-                text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "No date found";
-            } catch (error) {
-                // POGING 2: Als Flash faalt (404/400), probeer Pro
-                console.warn(`Flash failed (${error}), switching to PRO model...`);
-                setStatus("Switching to backup model (EU Fix)...", "loading");
-                const data = await fetchGemini(productNaam, base64, MODEL_BACKUP);
-                text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "No date found";
+            // Loop door de modellen heen tot er eentje werkt
+            for (const modelName of MODELS_TO_TRY) {
+                try {
+                    console.log(`Trying model: ${modelName}`);
+                    const model = genAI.getGenerativeModel({ model: modelName });
+                    
+                    const prompt = `This is a: ${productName}. Find the EXPIRATION DATE. 
+                    - Date found? Write ONLY the date in English (e.g. 12 Oct 2025). 
+                    - No date? Write exactly: "No date found".`;
+
+                    const imagePart = {
+                        inlineData: {
+                            data: base64Image,
+                            mimeType: "image/jpeg"
+                        }
+                    };
+
+                    const result = await model.generateContent([prompt, imagePart]);
+                    const response = await result.response;
+                    text = response.text().trim();
+                    
+                    success = true; // Het is gelukt!
+                    break;          // Stop de loop
+                } catch (err) {
+                    console.warn(`Model ${modelName} failed:`, err);
+                    lastError = err.message || err.toString();
+                    // Ga door naar het volgende model in de lijst...
+                }
             }
 
-            // STAP 3: Resultaat
+            if (!success) {
+                // Als ze allemaal falen, gooi de laatste error
+                throw new Error(`All models failed. Last error: ${lastError}`);
+            }
+
+            // STAP 3: Resultaat verwerken
             const dateFound = !text.toLowerCase().includes("no date found");
 
-            document.getElementById('resProduct').textContent = productNaam;
+            document.getElementById('resProduct').textContent = productName;
             document.getElementById('resDate').textContent = dateFound ? text : "Not found";
             resultArea.style.display = 'block';
 
@@ -190,13 +187,13 @@
                 speak(`The date is ${text}`);
             } else {
                 setStatus("No date found", "error");
-                const advies = TIPS_LIJST[productNaam] || `I recognize ${productNaam}, but see no date. Turn the product around.`;
+                const advice = TIPS_LIST[productName] || `I recognize ${productName}, but see no date. Turn the product around.`;
                 
                 const tipEl = document.getElementById('resTip');
-                tipEl.textContent = "💡 ADVICE: " + advies;
+                tipEl.textContent = "💡 ADVICE: " + advice;
                 tipEl.style.display = 'block';
                 
-                speak(`No date found. ${advies}`);
+                speak(`No date found. ${advice}`);
             }
 
         } catch (e) {
@@ -206,6 +203,7 @@
         scanBtn.disabled = false; scanBtn.textContent = "📸 SCAN AGAIN";
     }
 
+    // Start
     init();
 </script>
 
