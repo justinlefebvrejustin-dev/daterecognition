@@ -46,9 +46,10 @@
     // Importeer Gemini direct (geen server nodig)
     import { GoogleGenerativeAI } from "https://esm.run/@google/generative-ai";
 
-    // --- CONFIGURATIE (VUL DIT IN!) ---
+    // --- CONFIGURATIE ---
     const TM_MODEL_URL = "https://teachablemachine.withgoogle.com/models/hgp4ntk2z/";
-    // JA, DIT IS OPENBAAR. DIT IS DE PRIJS VOOR "ZONDER BACKEND" WERKEN.
+    
+    // API KEY IS HIER INGEVULD
     const GEMINI_API_KEY = "AIzaSyCO2VXgEzZyE7ox-eXeTwP5VIb79w3eKp8"; 
 
     // Variabelen
@@ -120,7 +121,9 @@
 
             // C. STAP 2: Gemini Datum Lezen (Direct vanuit browser)
             const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-            const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+            
+            // --- HIER ZIT DE FIX: MODEL NAAM AANGEPAST ---
+            const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
 
             // Converteer foto voor Gemini
             const base64Image = canvas.toDataURL("image/jpeg").split(",")[1];
