@@ -3,104 +3,84 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Date Scanner (Proxy Fix)</title>
+    <title>Smart Date Scanner</title>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.3.1/dist/tf.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8/dist/teachablemachine-image.min.js"></script>
     
     <style>
-        body { font-family: 'Segoe UI', sans-serif; background: #000; color: white; text-align: center; padding: 20px; }
-        .container { max-width: 500px; margin: 0 auto; background: #1a1a1a; padding: 20px; border-radius: 15px; border: 1px solid #333; }
-        video { width: 100%; border-radius: 10px; transform: scaleX(-1); border: 2px solid #333; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background-color: #000; color: #fff; display: flex; flex-direction: column; align-items: center; min-height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }
+        .container { width: 100%; max-width: 400px; display: flex; flex-direction: column; gap: 15px; }
         
-        button { background: #00C853; color: white; border: none; padding: 18px 30px; border-radius: 10px; font-size: 20px; font-weight: bold; width: 100%; margin-top: 15px; cursor: pointer; text-transform: uppercase; letter-spacing: 1px; }
-        button:disabled { background: #555; color: #888; }
+        h1 { margin: 0; font-size: 1.5rem; text-align: center; color: #3b82f6; }
         
-        .status { margin: 15px 0; padding: 12px; border-radius: 8px; font-size: 14px; font-family: monospace; }
-        .status.loading { background: #2196F3; color: white; }
-        .status.error { background: #D32F2F; color: white; }
-        .status.success { background: #388E3C; color: white; }
+        .camera-wrapper { position: relative; width: 100%; border-radius: 16px; overflow: hidden; border: 2px solid #333; background: #111; aspect-ratio: 3/4; }
+        video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
         
-        .log-console { font-size: 11px; color: #666; margin-top: 5px; min-height: 20px; text-align: left; background: #111; padding: 5px; border-radius: 4px; font-family: monospace; }
+        .status { padding: 12px; border-radius: 8px; font-size: 0.9rem; font-weight: 600; text-align: center; transition: all 0.3s ease; }
+        .status.loading { background: #2563eb; color: white; }
+        .status.success { background: #16a34a; color: white; }
+        .status.error { background: #dc2626; color: white; }
+        
+        button { background: #3b82f6; color: white; border: none; padding: 16px; border-radius: 12px; font-size: 1.1rem; font-weight: 700; cursor: pointer; transition: transform 0.1s; width: 100%; box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4); }
+        button:active { transform: scale(0.98); }
+        button:disabled { background: #4b5563; color: #9ca3af; cursor: not-allowed; box-shadow: none; }
 
-        #resultArea { display: none; margin-top: 20px; text-align: left; background: #252525; padding: 15px; border-radius: 10px; border-left: 5px solid #00C853; }
-        .label { color: #888; font-size: 0.8em; text-transform: uppercase; }
-        .data { font-size: 1.3em; display: block; margin-bottom: 10px; font-weight: bold; color: #fff; }
-        .tip-box { background: #333; padding: 10px; border-radius: 5px; margin-top: 10px; font-style: italic; color: #FFD600; display: none; border: 1px solid #FFD600; }
+        .result-card { background: #1f2937; border-radius: 12px; padding: 16px; display: none; border-left: 5px solid #3b82f6; margin-top: 10px; }
+        .result-title { font-size: 0.8rem; text-transform: uppercase; color: #9ca3af; letter-spacing: 0.05em; margin-bottom: 4px; }
+        .result-value { font-size: 1.2rem; font-weight: 600; color: white; margin-bottom: 12px; }
+        .tip-box { background: #374151; padding: 10px; border-radius: 8px; font-size: 0.9rem; color: #fbbf24; display: flex; align-items: start; gap: 8px; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h2>Scanner (Proxy Mode)</h2>
+    <h1>📅 Date Scanner</h1>
     
     <div id="status" class="status">System loading...</div>
-    <div id="log" class="log-console">Logs appear here...</div>
     
-    <video id="video" autoplay playsinline muted></video>
-    <button id="scanBtn" disabled>WAIT...</button>
+    <div class="camera-wrapper">
+        <video id="video" autoplay playsinline muted></video>
+    </div>
+
+    <button id="scanBtn" disabled>Starting Camera...</button>
     
-    <div id="resultArea">
-        <span class="label">Product Identified:</span>
-        <span class="data" id="resProduct">-</span>
+    <div id="result-card" class="result-card">
+        <div class="result-title">Product</div>
+        <div class="result-value" id="resProduct">-</div>
         
-        <span class="label">Expiration Date:</span>
-        <span class="data" id="resDate">-</span>
+        <div class="result-title">Expiration Date</div>
+        <div class="result-value" id="resDate">-</div>
         
-        <div id="resTip" class="tip-box"></div>
+        <div id="resTip" class="tip-box" style="display:none"></div>
     </div>
 </div>
 
 <script>
-    // ==========================================
-    // 1. CONFIGURATION
-    // ==========================================
-    
+    // --- 1. CONFIGURATION ---
     const TM_MODEL_URL = "https://teachablemachine.withgoogle.com/models/hgp4ntk2z/";
     
-    // API KEY (Split)
-    const DEEL_1 = "AIzaSyALqJ7iSB7Ifhy"; 
-    const DEEL_2 = "_Ym-b7Hkks5dpMava18I";
-    const API_KEY = DEEL_1 + DEEL_2;
+    // API KEY
+    const API_KEY = "AIzaSyALqJ7iSB7Ifhy" + "_Ym-b7Hkks5dpMava18I";
 
-    // THE PROXY (The Tunnel that fixes the block)
-    const PROXY_URL = "https://corsproxy.io/?";
-
-    // MODELS TO TRY
-    const MODEL_PRIORITY = [
-        "gemini-1.5-flash",
-        "gemini-1.5-flash-latest",
-        "gemini-1.5-pro",
-        "gemini-pro"
-    ];
-
-    const TIPS_LIST = {
-        "Butter": "This is butter. Check the top of the lid.",
-        "Soda can": "This is a soda can. The date is usually on the bottom.",
-        "Slices of meat": "This is a package with slices of meat. The date is usually on the top of the package.",
-        "Milk": "This is milk. The date is usually on the top rim or cap.",
-        "Snack": "This is a snack. Look for a white box on the back.",
-        "Background": "I don't see a product, please hold it closer to the camera."
+    // TIPS
+    const TIPS = {
+        "Butter": "Check the top of the lid.",
+        "Soda can": "Check the bottom of the can.",
+        "Slices of meat": "Check the front label or top corner.",
+        "Milk": "Check the cap or the neck of the bottle.",
+        "Snack": "Look for a white rectangle on the back.",
+        "General": "Try rotating the product slowly."
     };
 
-    // ==========================================
-    // 2. LOGIC
-    // ==========================================
-
+    // --- 2. LOGIC ---
     let tmModel, videoEl = document.getElementById('video');
     let statusEl = document.getElementById('status');
-    let logEl = document.getElementById('log');
     let scanBtn = document.getElementById('scanBtn');
-    let resultArea = document.getElementById('resultArea');
+    let resCard = document.getElementById('result-card');
 
-    function setStatus(msg, type='loading') {
+    function setStatus(msg, type='') {
         statusEl.textContent = msg;
         statusEl.className = `status ${type}`;
-    }
-
-    function log(msg) {
-        logEl.textContent += "> " + msg + "\n";
-        console.log(msg);
-        logEl.scrollTop = logEl.scrollHeight;
     }
 
     function speak(text) {
@@ -112,7 +92,7 @@
 
     async function init() {
         try {
-            setStatus("Loading Teachable Machine...");
+            setStatus("Loading AI Models...", "loading");
             tmModel = await tmImage.load(TM_MODEL_URL + 'model.json', TM_MODEL_URL + 'metadata.json');
             
             const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
@@ -120,73 +100,20 @@
             
             scanBtn.disabled = false;
             scanBtn.textContent = "📸 SCAN NOW";
-            setStatus("Ready. Press Scan.", "success");
+            setStatus("Ready to scan", "success");
             scanBtn.onclick = doScan;
         } catch (e) {
-            setStatus("Camera Error: " + e.message, "error");
+            setStatus("Error: " + e.message, "error");
         }
-    }
-
-    // THE TUNNEL FETCH FUNCTION
-    async function findDateWithProxy(productName, base64Image) {
-        let lastError = "";
-
-        const prompt = `This is a: ${productName}. Find the EXPIRATION DATE. 
-        - If found: Write ONLY the date in English (e.g. 12 Oct 2025). 
-        - If NOT found: Write exactly "No date found".`;
-
-        for (const modelName of MODEL_PRIORITY) {
-            log(`Trying ${modelName} via Proxy...`);
-            
-            try {
-                // 1. Bouw de originele Google URL
-                const googleUrl = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${API_KEY}`;
-                
-                // 2. Plak de Proxy ervoor (encodeURIComponent is belangrijk!)
-                const finalUrl = PROXY_URL + encodeURIComponent(googleUrl);
-                
-                const payload = {
-                    contents: [{
-                        parts: [
-                            { text: prompt },
-                            { inline_data: { mime_type: "image/jpeg", data: base64Image } }
-                        ]
-                    }]
-                };
-
-                const response = await fetch(finalUrl, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
-
-                if (response.ok) {
-                    const data = await response.json();
-                    const text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-                    log(`✅ Success with ${modelName}!`);
-                    return text || "No date found";
-                } else {
-                    log(`❌ Failed (${response.status}). Trying next...`);
-                    lastError = response.status;
-                }
-
-            } catch (err) {
-                log(`❌ Error: ${err.message}`);
-            }
-        }
-
-        throw new Error(`All models failed via Proxy. Last code: ${lastError}`);
     }
 
     async function doScan() {
         scanBtn.disabled = true; scanBtn.textContent = "Analyzing...";
         setStatus("Identifying product...", "loading");
-        resultArea.style.display = 'none';
-        document.getElementById('resTip').style.display = 'none';
-        logEl.textContent = ""; // Clear log
+        resCard.style.display = 'none';
 
         try {
-            // 1. TM
+            // 1. Teachable Machine
             const canvas = document.createElement("canvas");
             canvas.width = videoEl.videoWidth; canvas.height = videoEl.videoHeight;
             const ctx = canvas.getContext("2d");
@@ -194,35 +121,65 @@
             
             const prediction = await tmModel.predict(canvas);
             const bestPred = prediction.reduce((p, c) => p.probability > c.probability ? p : c);
-            const productName = bestPred.className;
+            const product = bestPred.className;
 
-            setStatus(`Found: ${productName}. Asking AI...`, "loading");
+            setStatus(`Found: ${product}. Reading date...`, "loading");
 
-            // 2. Proxy Call
+            // 2. Gemini (Try multiple models for safety)
             const base64 = canvas.toDataURL("image/jpeg").split(",")[1];
-            const text = await findDateWithProxy(productName, base64);
-            const dateFound = !text.toLowerCase().includes("no date found");
-
-            // 3. Result
-            document.getElementById('resProduct').textContent = productName;
-            document.getElementById('resDate').textContent = dateFound ? text : "Not found";
-            resultArea.style.display = 'block';
-
-            if (dateFound) {
-                setStatus("Success!", "success");
-                speak(`The date is ${text}`);
-            } else {
-                setStatus("No date found", "error");
-                const advice = TIPS_LIST[productName] || `I recognize ${productName}, but see no date. Turn the product around.`;
-                const tipEl = document.getElementById('resTip');
-                tipEl.textContent = "💡 " + advice;
-                tipEl.style.display = 'block';
-                speak(`No date found. ${advice}`);
+            let dateText = "NULL";
+            
+            // We proberen Flash, daarna Pro. MET VPN WERKT DIT GEWOON!
+            const models = ["gemini-1.5-flash", "gemini-1.5-pro"];
+            
+            for (let model of models) {
+                try {
+                    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${API_KEY}`;
+                    const response = await fetch(url, {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            contents: [{
+                                parts: [
+                                    { text: `This is ${product}. Find EXPIRATION DATE. Reply ONLY date in English (e.g. 12 Oct 2025) or 'NULL'.` },
+                                    { inline_data: { mime_type: "image/jpeg", data: base64 } }
+                                ]
+                            }]
+                        })
+                    });
+                    if (response.ok) {
+                        const data = await response.json();
+                        const t = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+                        if (t && !t.includes("NULL")) {
+                            dateText = t;
+                            break; 
+                        }
+                    }
+                } catch(e) {}
             }
 
+            // 3. Resultaat
+            const found = !dateText.includes("NULL");
+            
+            document.getElementById('resProduct').textContent = product;
+            document.getElementById('resDate').textContent = found ? dateText : "Not found";
+            
+            const tipEl = document.getElementById('resTip');
+            if (!found) {
+                const tip = TIPS[product] || TIPS["General"];
+                tipEl.textContent = "💡 " + tip;
+                tipEl.style.display = 'flex';
+                speak(`No date found. ${tip}`);
+            } else {
+                tipEl.style.display = 'none';
+                speak(`The date is ${dateText}`);
+            }
+            
+            resCard.style.display = 'block';
+            setStatus(found ? "Success!" : "Date not found", found ? "success" : "error");
+
         } catch (e) {
-            setStatus("System Error: " + e.message, "error");
-            log("FATAL ERROR: " + e.message);
+            setStatus("Error: " + e.message, "error");
         }
         scanBtn.disabled = false; scanBtn.textContent = "📸 SCAN AGAIN";
     }
