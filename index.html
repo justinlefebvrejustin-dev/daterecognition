@@ -3,214 +3,146 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Smart Date Scanner</title>
+    <title>Debug Scanner</title>
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.3.1/dist/tf.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8/dist/teachablemachine-image.min.js"></script>
     
     <style>
-        /* MODERN DARK APP DESIGN */
-        body { 
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; 
-            background-color: #000; 
-            color: #fff; 
-            display: flex; 
-            flex-direction: column; 
-            align-items: center; 
-            min-height: 100vh; 
-            margin: 0; 
-            padding: 20px; 
-            box-sizing: border-box; 
-        }
-        .container { width: 100%; max-width: 400px; display: flex; flex-direction: column; gap: 15px; }
-        
-        h1 { margin: 0 0 10px 0; font-size: 1.6rem; text-align: center; color: #3b82f6; font-weight: 800; letter-spacing: -0.5px; }
-        
-        /* CAMERA FRAME */
-        .camera-wrapper { 
-            position: relative; 
-            width: 100%; 
-            border-radius: 20px; 
-            overflow: hidden; 
-            border: 2px solid #333; 
-            background: #111; 
-            aspect-ratio: 3/4; 
-            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-        }
-        /* Spiegelbeeld voor natuurlijk camera gevoel */
+        body { background-color: #000; color: #fff; font-family: sans-serif; text-align: center; padding: 20px; }
+        .camera-wrapper { width: 100%; border: 2px solid #333; background: #111; aspect-ratio: 3/4; margin-bottom: 20px; }
         video { width: 100%; height: 100%; object-fit: cover; transform: scaleX(-1); }
-        
-        /* STATUS BAR */
-        .status { 
-            padding: 12px; 
-            border-radius: 12px; 
-            font-size: 0.95rem; 
-            font-weight: 600; 
-            text-align: center; 
-            transition: all 0.3s ease; 
-            background: #1f2937;
-            border: 1px solid #374151;
-        }
-        .status.loading { background: #2563eb; color: white; border-color: #2563eb; }
-        .status.success { background: #16a34a; color: white; border-color: #16a34a; }
-        .status.error { background: #dc2626; color: white; border-color: #dc2626; }
-        
-        /* ACTION BUTTON */
-        button { 
-            background: #3b82f6; 
-            color: white; 
-            border: none; 
-            padding: 18px; 
-            border-radius: 16px; 
-            font-size: 1.1rem; 
-            font-weight: 700; 
-            cursor: pointer; 
-            width: 100%; 
-            box-shadow: 0 4px 15px rgba(59, 130, 246, 0.4); 
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-        button:active { transform: scale(0.98); }
-        button:disabled { background: #4b5563; color: #9ca3af; cursor: not-allowed; box-shadow: none; }
-
-        /* RESULT CARD */
-        .result-card { 
-            background: #1f2937; 
-            border-radius: 16px; 
-            padding: 20px; 
-            display: none; 
-            border-left: 6px solid #3b82f6; 
-            margin-top: 10px; 
-            box-shadow: 0 10px 25px rgba(0,0,0,0.3);
-        }
-        .result-title { font-size: 0.75rem; text-transform: uppercase; color: #9ca3af; letter-spacing: 1px; margin-bottom: 5px; }
-        .result-value { font-size: 1.4rem; font-weight: 700; color: white; margin-bottom: 15px; }
-        
-        .tip-box { 
-            background: #374151; 
-            padding: 12px; 
-            border-radius: 10px; 
-            font-size: 0.95rem; 
-            color: #fbbf24; 
-            display: flex; 
-            align-items: start; 
-            gap: 10px; 
-            line-height: 1.4;
-        }
+        .status { padding: 15px; background: #333; margin-bottom: 10px; border-radius: 8px; font-weight: bold; }
+        .error-log { color: #ff4444; font-family: monospace; text-align: left; background: #220000; padding: 10px; border: 1px solid red; display: none; margin-top: 10px; white-space: pre-wrap; }
+        button { background: #3b82f6; color: white; padding: 20px; font-size: 20px; border: none; width: 100%; border-radius: 10px; font-weight: bold; }
+        .result-box { margin-top: 20px; padding: 15px; background: #222; border-left: 5px solid #3b82f6; text-align: left; display: none; }
     </style>
 </head>
 <body>
 
-<div class="container">
-    <h1>📅 Date Scanner</h1>
-    
-    <div id="status" class="status">System loading...</div>
-    
+    <div id="status" class="status">Step 1: System starting...</div>
+    <div id="errorLog" class="error-log"></div>
+
     <div class="camera-wrapper">
         <video id="video" autoplay playsinline muted></video>
     </div>
 
-    <button id="scanBtn" disabled>Starting Camera...</button>
-    
-    <div id="result-card" class="result-card">
-        <div class="result-title">Product Identified</div>
-        <div class="result-value" id="resProduct">-</div>
-        
-        <div class="result-title">Expiration Date</div>
-        <div class="result-value" id="resDate">-</div>
-        
-        <div id="resTip" class="tip-box" style="display:none"></div>
+    <button id="scanBtn" disabled>Please Wait...</button>
+
+    <div id="result" class="result-box">
+        <h3 id="resTitle">Scanning...</h3>
+        <p id="resBody">...</p>
     </div>
-</div>
 
 <script>
-    // ==========================================
-    // 1. CONFIGURATION
-    // ==========================================
-    
+    // CONFIG
     const TM_MODEL_URL = "https://teachablemachine.withgoogle.com/models/hgp4ntk2z/";
-    
-    // API KEY
     const API_KEY = "AIzaSyALqJ7iSB7Ifhy" + "_Ym-b7Hkks5dpMava18I";
 
-    // TIPS DATABASE
-    const TIPS = {
-        "Butter": "Check the top of the lid.",
-        "Soda can": "Check the bottom of the can.",
-        "Slices of meat": "Check the front label or top corner.",
-        "Milk": "Check the cap or the neck of the bottle.",
-        "Snack": "Look for a white rectangle on the back.",
-        "General": "Try rotating the product slowly."
-    };
-
-    // ==========================================
-    // 2. SYSTEM LOGIC
-    // ==========================================
+    // LOGGING
+    const statusEl = document.getElementById('status');
+    const errEl = document.getElementById('errorLog');
+    const btn = document.getElementById('scanBtn');
     
-    let tmModel, videoEl = document.getElementById('video');
-    let statusEl = document.getElementById('status');
-    let scanBtn = document.getElementById('scanBtn');
-    let resCard = document.getElementById('result-card');
-
-    function setStatus(msg, type='') {
-        statusEl.textContent = msg;
-        statusEl.className = `status ${type}`;
+    function log(msg) {
+        statusEl.innerText = msg;
+        console.log(msg);
     }
-
-    // --- DE NIEUWE STEM FUNCTIE (GOOGLE TRANSLATE HACK) ---
-    function speak(text) {
-        // Stop eventuele vorige audio
-        window.speechSynthesis.cancel();
-        
-        // We proberen de Google Translate API aan te roepen voor MP3 audio
-        try {
-            // Encode de tekst voor de URL
-            const url = `https://translate.google.com/translate_tts?ie=UTF-8&tl=en&client=tw-ob&q=${encodeURIComponent(text)}`;
-            const audio = new Audio(url);
-            
-            // Speel af
-            audio.play().catch(e => {
-                // Als dit faalt (bv. door browser beveiliging), val terug op de robotstem
-                console.warn("Google Voice failed, using fallback:", e);
-                fallbackSpeak(text);
-            });
-        } catch (e) {
-            fallbackSpeak(text);
-        }
-    }
-
-    // Fallback naar de browser-stem (voor zekerheid)
-    function fallbackSpeak(text) {
-        const u = new SpeechSynthesisUtterance(text);
-        u.lang = 'en-US'; 
-        u.rate = 1.0;
-        window.speechSynthesis.speak(u);
+    
+    function error(msg) {
+        statusEl.innerText = "CRITICAL ERROR (See below)";
+        statusEl.style.background = "red";
+        errEl.style.display = "block";
+        errEl.innerText += "> " + msg + "\n";
     }
 
     async function init() {
         try {
-            setStatus("Loading AI Models...", "loading");
-            tmModel = await tmImage.load(TM_MODEL_URL + 'model.json', TM_MODEL_URL + 'metadata.json');
+            log("Step 2: Loading Teachable Machine...");
+            const model = await tmImage.load(TM_MODEL_URL + 'model.json', TM_MODEL_URL + 'metadata.json');
             
+            log("Step 3: Requesting Camera...");
+            const video = document.getElementById('video');
             const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
-            videoEl.srcObject = stream;
+            video.srcObject = stream;
             
-            scanBtn.disabled = false;
-            scanBtn.textContent = "📸 SCAN NOW";
-            setStatus("Ready to scan", "success");
-            scanBtn.onclick = doScan;
+            log("Step 4: Starting Video...");
+            await new Promise((resolve) => {
+                video.onloadedmetadata = () => {
+                    video.play();
+                    resolve();
+                };
+            });
+
+            log("✅ READY! Turn VPN ON now.");
+            statusEl.style.background = "green";
+            btn.disabled = false;
+            btn.innerText = "📸 SCAN NOW";
+            
+            btn.onclick = async () => {
+                await runScan(model, video);
+            };
+
         } catch (e) {
-            setStatus("Error: " + e.message, "error");
+            error(e.message);
         }
     }
 
-    async function doScan() {
-        scanBtn.disabled = true; scanBtn.textContent = "Analyzing...";
-        setStatus("Identifying product...", "loading");
-        resCard.style.display = 'none';
-
+    async function runScan(model, video) {
+        btn.disabled = true; btn.innerText = "Thinking...";
+        log("Identifying Product...");
+        
         try {
-            // STAP 1: Teachable Machine (Product Herkennen)
-            // We spiegelen NIET voor TM (tenzij je dat bij trainen deed), 
-            // maar meestal werkt de standaard setup goed in de browser.
+            // 1. TM PREDICT
             const canvas = document.createElement("canvas");
-            canvas.width = videoEl.videoWidth; canvas.
+            canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+            canvas.getContext("2d").drawImage(video, 0, 0);
+            
+            const prediction = await model.predict(canvas);
+            const best = prediction.reduce((p, c) => p.probability > c.probability ? p : c);
+            
+            log(`Found: ${best.className}. Asking Google...`);
+            
+            // 2. GEMINI (DATE)
+            const base64 = canvas.toDataURL("image/jpeg").split(",")[1];
+            
+            try {
+                const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${API_KEY}`;
+                const resp = await fetch(url, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        contents: [{
+                            parts: [
+                                { text: `This is ${best.className}. Find EXPIRATION DATE. Reply ONLY date or 'NULL'.` },
+                                { inline_data: { mime_type: "image/jpeg", data: base64 } }
+                            ]
+                        }]
+                    })
+                });
+
+                if (!resp.ok) throw new Error("VPN Error or Google Blocked (" + resp.status + ")");
+                
+                const data = await resp.json();
+                const text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "NULL";
+                
+                // SHOW RESULT
+                document.getElementById('result').style.display = 'block';
+                document.getElementById('resTitle').innerText = best.className;
+                document.getElementById('resBody').innerText = text.includes("NULL") ? "No date found (Check VPN?)" : "Date: " + text;
+                
+                log("Scan Complete");
+
+            } catch (apiErr) {
+                error("API Error: " + apiErr.message);
+            }
+
+        } catch (e) {
+            error(e.message);
+        }
+        btn.disabled = false; btn.innerText = "📸 SCAN AGAIN";
+    }
+
+    init();
+</script>
+</body>
+</html>
