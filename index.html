@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Date Recognition Final</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.3.1/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@0.8/dist/teachablemachine-image.min.js"></script>
+    
+    <style>
+        body { font-family: -apple-system, sans-serif; background: #f0f2f5; display: flex; flex-direction: column; align-items: center; padding: 20px; color: #333; }
+        .container { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); width: 100%; max-width: 500px; text-align: center; }
+        h1 { margin-bottom: 10px; }
+        video { width: 100%; border-radius: 8px; background: black; margin-bottom: 15px; transform: scaleX(-1); /* Spiegelen voor natuurlijk gevoel */ }
+        button { background: #007bff; color: white; border: none; padding: 18px 30px; border-radius: 12px; font-size: 18px; font-weight: bold; cursor: pointer; width: 100%; margin-top: 10px; transition: background 0.2s; }
+        button:hover { background: #0056b3; }
+        button:disabled { background: #ccc; cursor: not-allowed; }
+        .status { margin: 15px 0; padding: 12px; border-radius: 8px; font-weight: 500; }
+        .status.loading { background: #e3f2fd; color: #1565c0; }
+        .status.success { background: #e8f5e9; color: #2e7d32; }
+        .status.error { background: #ffebee; color: #c62828; }
+        #result { margin-top: 20px; text-align: left; display: none; }
+        .result-box { background: #f8f9fa; padding: 15px; border-radius: 8px; border-left: 5px solid #007bff; }
+        .result-box strong { display: block; font-size: 1.1em; margin-bottom: 5px; }
+        .advice { font-style: italic; color: #666; margin-top: 10px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Date Scanner</h1>
+    <div id="status" class="status loading">System initializing...</div>
+    
+    <div style="position: relative;">
+        <video id="video" autoplay playsinline muted></video>
+    </div>
+
+    <button id="scanBtn" disabled>START CAMERA EERST</button>
+    
+    <div id="result">
+        <div class="result-box" id="resultContent"></div>
+    </div>
+</div>
+
+<script type="module">
+    // Importeer Gemini direct (geen server nodig)
+    import { GoogleGenerativeAI } from "https://esm.run/@google/generative-ai";
+
+    // --- CONFIGURATIE (VUL DIT IN!) ---
+    const TM_MODEL_URL = "https://teachablemachine.withgoogle.com/models/hgp4ntk2z/";
+    // JA, DIT IS OPENBAAR. DIT IS DE PRIJS VOOR "ZONDER BACKEND" WERKEN.
+    const GEMINI_API_KEY = "AIzaSyCO2VXgEzZyE7ox-eXeTwP5VIb79w3eKp8"; 
+
+    // Variabelen
+    let tmModel, stream;
+    const videoEl = document.getElementById('video');
+    const statusEl = document.getElementById('status');
+    const scanBtn = document.getElementById('scanBtn');
+    const resultDiv = document.getElementById('result');
+    const resultContent = document.getElementById('resultContent');
+
+    // Helper: Status updaten
+    function setStatus(msg, type='loading') {
+        statusEl.textContent = msg;
+        statusEl.className = `status ${type}`;
+    }
+
+    // Helper: Spraak
+    function speak(text) {
+        window.speechSynthesis.cancel();
+        const u = new SpeechSynthesisUtterance(text);
+        u.lang = 'en-US';
+        window.speechSynthesis.speak(u);
+    }
+
+    // STAP 1: Start Alles (Modellen laden + Camera)
+    async function init() {
+        try {
+            setStatus("Loading Teachable Machine & AI...");
+            
+            // 1. Laad jouw Teachable Machine model (via Google link)
+            tmModel = await tmImage.load(TM_MODEL_URL + 'model.json', TM_MODEL_URL + 'metadata.json');
+            
+            // 2. Start Camera
+            stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+            videoEl.srcObject = stream;
+            
+            // Klaar voor start
+            scanBtn.disabled = false;
+            scanBtn.textContent = "SCAN PRODUCT";
+            setStatus("Ready. Point at product.", "success");
+
+            scanBtn.onclick = doScan;
+
+        } catch (e) {
+            setStatus("Error initializing: " + e.message, "error");
+        }
+    }
+
+    // STAP 2: De Scan Actie (Hier gebeurt alles)
+    async function doScan() {
+        if (GEMINI_API_KEY.includes("VUL_HIER")) { alert("STOP! Vul eerst je API Key in de code in."); return; }
+
+        scanBtn.disabled = true; scanBtn.textContent = "Analyzing...";
+        setStatus("Identifying product & reading date...", "loading");
+        resultDiv.style.display = "none";
+
+        try {
+            // A. Maak foto van video
+            const canvas = document.createElement("canvas");
+            canvas.width = videoEl.videoWidth; canvas.height = videoEl.videoHeight;
+            const ctx = canvas.getContext("2d");
+            ctx.drawImage(videoEl, 0, 0);
+
+            // B. STAP 1: Teachable Machine Herkenning
+            const prediction = await tmModel.predict(canvas);
+            // Pak de beste voorspelling
+            const bestPred = prediction.reduce((p, c) => p.probability > c.probability ? p : c);
+            const productName = bestPred.className;
+
+            // C. STAP 2: Gemini Datum Lezen (Direct vanuit browser)
+            const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+            const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+
+            // Converteer foto voor Gemini
+            const base64Image = canvas.toDataURL("image/jpeg").split(",")[1];
+            const imagePart = { inlineData: { data: base64Image, mimeType: "image/jpeg" } };
+
+            // De agressieve prompt, MET het product dat TM heeft gevonden
+            const prompt = `You are an assistant for the blind. This is a ${productName}. Find the EXPIRATION DATE (EXP/BB/THT). 
+            Search aggressively for dates (dd-mm-yy, mm/yyyy). Ignore barcodes.
+            Reply ONLY with the date in English (e.g., "15 Oct 2025"). If absolutely NO date is found, reply "NULL".`;
+
+            const result = await model.generateContent([prompt, imagePart]);
+            const responseText = await result.response.text();
+            const cleanDate = responseText.trim();
+            const dateFound = !cleanDate.includes("NULL");
+
+            // D. Resultaten tonen
+            let displayHtml = `<strong>Product Identified:</strong> ${productName}<br>`;
+            if (dateFound) {
+                displayHtml += `<strong>Date Found:</strong> ${cleanDate}`;
+                setStatus("Success!", "success");
+                speak(`Product is ${productName}. The date is ${cleanDate}.`);
+            } else {
+                displayHtml += `<strong>Date:</strong> Not found yet.`;
+                displayHtml += `<div class="advice">💡 Tip: Try turning the ${productName} to find the date.</div>`;
+                setStatus("Product found, but no date.", "error");
+                speak(`${productName} detected. No date found, please rotate the package.`);
+            }
+
+            resultContent.innerHTML = displayHtml;
+            resultDiv.style.display = "block";
+
+        } catch (error) {
+            setStatus("Scan failed: " + error.message, "error");
+            console.error(error);
+        }
+
+        scanBtn.disabled = false; scanBtn.textContent = "SCAN AGAIN";
+    }
+
+    // Start direct bij laden pagina
+    init();
+</script>
+
+</body>
+</html>
